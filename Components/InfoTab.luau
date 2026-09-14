@@ -1,5 +1,12 @@
 return function(Window)
     local LatestChangelog = {
+        "14/9/2026 (Update 2)",
+        "<font color='rgb(0, 255, 0)'>+ Fixed FOV stutter/glitches (Added Custom Field of View toggle)</font>",
+        "<font color='rgb(0, 255, 0)'>+ Fixed Crouch & Shift locking; enabled Jumping by default</font>",
+        "<font color='rgb(0, 255, 0)'>+ Fixed Closet/Locker exit delay & added Emergency Exit Closet button</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Room Status Notifier (Real vs Fake Dupe Room/Door) & ESP markers</font>",
+        "<font color='rgb(0, 255, 0)'>+ Consolidated Auto Interact filters into a single 'Junk' category</font>",
+        "<font color='rgb(0, 255, 0)'>+ Fixed Auto Interact Locker opening regression (Open/Search/Loot once)</font>",
         "14/9/2026",
         "<font color='rgb(0, 255, 0)'>+ Added Bypass Drones (Immunity & Noclip against Drones)</font>",
         "<font color='rgb(0, 255, 0)'>+ Added Water Cooler ESP & Spawn Notifier</font>",

@@ -1065,6 +1065,21 @@ Groupboxes.General_Character:AddToggle("RemoveClosetDelay", {
 	Text = "Remove Closet Delay", Default = false,
 	Tooltip = "Removes the short window where you can't exit out of a closet after the animation finishes."
 })
+Groupboxes.General_Character:AddButton({
+	Text = "Exit Closet / Hiding",
+	DoubleClick = false,
+	Tooltip = "Forces your character to immediately exit out of a closet or hiding spot.",
+	Func = function()
+		if RemotesFolder:FindFirstChild("CamLock") then
+			RemotesFolder.CamLock:FireServer()
+		end
+		if Character then
+			Character:SetAttribute("Hiding", false)
+			if CollisionPart then CollisionPart.Anchored = false end
+			if RootPart then RootPart.Anchored = false end
+		end
+	end
+})
 Groupboxes.General_Character:AddToggle("RemoveAcceleration", {
 	Text = "Remove Acceleration", Default = false, Tooltip = "Prevents your character from sliding while moving."
 })
@@ -1072,8 +1087,8 @@ Groupboxes.General_Character:AddToggle("RemoveAcceleration", {
 local CustomPhysics
 
 Options.SpeedBoostSlider:OnChanged(function(Value)
-	if RemotesFolder:FindFirstChild("Crouch") then
-		RemotesFolder.Crouch:FireServer(Value and true or Functions.IsCrouching(), true)
+	if Toggles.SpeedBoostToggle.Value and Humanoid then
+		Humanoid.WalkSpeed = Functions.GetCurrentSpeed() + Value
 	end
 end)
 
@@ -1088,7 +1103,7 @@ end)
 
 Groupboxes.General_Character:AddDivider()
 Groupboxes.General_Character:AddToggle("EnableCharacterJump", {
-	Text = "Enable Jumping", Default = false, Tooltip = "Allows your character to jump."
+	Text = "Enable Jumping", Default = true, Tooltip = "Allows your character to jump."
 })
 Groupboxes.General_Character:AddToggle("EnableCharacterSlide", {
 	Text = "Enable Sliding", Default = false, Tooltip = "Allows your character to slide."
@@ -1108,6 +1123,9 @@ end)
 Toggles.EnableCharacterJump:OnChanged(function(Value)
 	if Character then
 		Character:SetAttribute("CanJump", Value and true or OldJump)
+		if Humanoid then
+			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, Value)
+		end
 	end
 end)
 Toggles.EnableCharacterSlide:OnChanged(function(Value)
@@ -1207,8 +1225,8 @@ Toggles.AutoInteractToggle:AddKeyPicker("AutoInteractKeybind", {
 })
 Groupboxes.Self_Automation:AddDropdown("AutoInteractIgnoreList", {
 	Text = "Ignore List",
-	Values = { "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks", "Seats / Chairs", "Lockers", "Terminals", "Trashcans", "Fish Tank", "Printers", "Push Prompts" },
-	Default = { "Glitch Fragments", "Jeff Items", "Dropped Items", "Seats / Chairs", "Terminals", "Trashcans", "Fish Tank", "Printers", "Push Prompts" },
+	Values = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks" },
+	Default = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items" },
 	Multi = true, AllowNull = true
 })
 Groupboxes.Self_Automation:AddToggle("AutoInteractIgnoreSeats", {
@@ -1584,6 +1602,7 @@ end)
 Groupboxes.Visuals_LeftTab = Tabs.Visuals:AddLeftTabbox("Camera / Effects")
 Groupboxes.Visuals_Camera = Groupboxes.Visuals_LeftTab:AddTab("Camera")
 Groupboxes.Visuals_Camera:AddToggle("AmbientToggle", { Text = "Ambient", Default = false, Tooltip = "Changes the lighting color to the specified value." })
+Groupboxes.Visuals_Camera:AddToggle("FieldOfViewToggle", { Text = "Custom Field of View", Default = false, Tooltip = "Overrides the game's field of view." })
 Groupboxes.Visuals_Camera:AddSlider("FieldOfView", { Text = "Field of View", Min = 1, Max = 120, Default = 70, Rounding = 0 })
 Groupboxes.Visuals_Camera:AddDivider()
 Groupboxes.Visuals_Camera:AddToggle("RemoveCameraShake", {
@@ -1622,6 +1641,31 @@ end)
 
 local Main_Game
 local ClientModules
+
+Toggles.FieldOfViewToggle:OnChanged(function(Value)
+	if not Value then
+		if Main_Game then
+			Main_Game.fovtarget = 70
+		else
+			Camera.FieldOfView = 70
+		end
+	else
+		if Main_Game then
+			Main_Game.fovtarget = Options.FieldOfView.Value
+		else
+			Camera.FieldOfView = Options.FieldOfView.Value
+		end
+	end
+end)
+Options.FieldOfView:OnChanged(function(Value)
+	if Toggles.FieldOfViewToggle.Value then
+		if Main_Game then
+			Main_Game.fovtarget = Value
+		else
+			Camera.FieldOfView = Value
+		end
+	end
+end)
 
 Toggles.RemoveCameraBobbing:OnChanged(function(Value)
 	if Main_Game then Main_Game.spring.Speed = Value and 9e9 or 8 end
@@ -1752,6 +1796,7 @@ Groupboxes.Visuals_Entities:AddDropdown("NotifyItemList", {
 Groupboxes.Visuals_Entities:AddToggle("NotifyItemsToggle",    { Text = "Notify Items",    Default = false, Tooltip = "Sends a notification when an item spawns." })
 Groupboxes.Visuals_Entities:AddToggle("NotifyItemsShowDistance",    { Text = "Show Distance",    Default = false, Tooltip = "Shows how far away the item is in the notification." })
 Groupboxes.Visuals_Entities:AddToggle("NotifyCoolersToggle",          { Text = "Notify Water Coolers", Default = false, Tooltip = "Sends a notification when a water cooler spawns." })
+Groupboxes.Visuals_Entities:AddToggle("NotifyRoomStatus",          { Text = "Notify Room Status", Default = true, Tooltip = "Notifies whether the entered room is correct and warns about fake doors." })
 Groupboxes.Visuals_Entities:AddDivider()
 Groupboxes.Visuals_Entities:AddToggle("NotifyLibraryCode", { Text = "Notify Library Code", Default = false, Tooltip = "Automatically solves the code for the library padlock." })
 Groupboxes.Visuals_Entities:AddToggle("NotifyOxygen",      { Text = "Notify Oxygen Level", Default = false, Tooltip = "Shows how much oxygen you have remaining." })
@@ -1913,7 +1958,7 @@ local NodeEntities = {
 
 Toggles.DoorESPToggle:OnChanged(function(Value)
 	for _, Object in Objects.Doors do
-		if Value then Functions.AddESP({ Object = Object, Text = "Door " .. Functions.GetDoorNumber(Object), Color = Options.DoorESPColor.Value }, true)
+		if Value then Functions.AddESP({ Object = Object, Text = "Door " .. Functions.GetDoorNumber(Object) .. " [CORRECT]", Color = Options.DoorESPColor.Value }, true)
 		else Functions.RemoveESP(Object) end
 	end
 end)
@@ -2721,8 +2766,8 @@ if Functions.CheckCompatability({"hookmetamethod", "newcclosure", "getnamecallme
 			if Self.Name == "Crouch" and Method == "FireServer" then
 				if Toggles.CrouchSpoof.Value or Toggles.PositionSpoof.Value then
 					Args[1] = true
+					Args[2] = true
 				end
-				Args[2] = true
 			end
 
 			if Self.Name == "ClutchHeartbeat" and Method == "FireServer" and Toggles.AutoHeartbeatMinigame.Value or Self.Name == "HideMonster" and Method == "FireServer" and Toggles.AutoHeartbeatMinigame.Value then
@@ -2780,7 +2825,7 @@ local CharacterOldConnectionKeys = {
 	"OxygenConnection", "AnimationHandler", "AutoHideConnection", "AutoReviveHandler",
 	"SHMFixer", "AnticheatDisabler", "AnticheatEnableDetector1", "AnticheatEnableDetector2",
 	"AutoSteerMinecartDuckHandler", "AutoSolveAnchorsConnection", "InfiniteJumpsConnection1", "InfiniteJumpsConnection2",
-	"FootstepHandler"
+	"FootstepHandler", "RoomStatusNotifier"
 }
 
 Globals.IsTyping = false
@@ -2835,7 +2880,10 @@ Functions.HandleCharacter = function(NewCharacter)
 	OldJump  = NewCharacter:GetAttribute("CanJump")
 	OldSlide = NewCharacter:GetAttribute("CanSlide")
 
-	if Toggles.EnableCharacterJump.Value  then Character:SetAttribute("CanJump",  true) end
+	if Toggles.EnableCharacterJump.Value then
+		Character:SetAttribute("CanJump", true)
+		if Humanoid then Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true) end
+	end
 	if Toggles.EnableCharacterSlide.Value then Character:SetAttribute("CanSlide", true) end
 
 	if Functions.CheckCompatability({"require"}) then
@@ -2875,10 +2923,12 @@ Functions.HandleCharacter = function(NewCharacter)
 			Main_Game.crouch(false)
 			Globals.AutoMinecartDucked = false
 		end
-		if Main_Game then
-			Main_Game.fovtarget = Options.FieldOfView.Value
-		else
-			Camera.FieldOfView = Options.FieldOfView.Value
+		if Toggles.FieldOfViewToggle.Value then
+			if Main_Game then
+				Main_Game.fovtarget = Options.FieldOfView.Value
+			else
+				Camera.FieldOfView = Options.FieldOfView.Value
+			end
 		end
 		Globals.LastDuck = tick()
 	end)
@@ -3054,7 +3104,19 @@ Functions.HandleCharacter = function(NewCharacter)
 		if Toggles.EnableCharacterJump.Value and Val ~= true or not Toggles.EnableCharacterJump.Value then
 			OldJump = Val
 		end
-		if Toggles.EnableCharacterJump.Value then Character:SetAttribute("CanJump", true) end
+		if Toggles.EnableCharacterJump.Value then
+			Character:SetAttribute("CanJump", true)
+			if Humanoid then Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true) end
+		end
+	end)
+
+	Connections.RoomStatusNotifier = LatestRoom:GetPropertyChangedSignal("Value"):Connect(function()
+		if Toggles.NotifyRoomStatus and Toggles.NotifyRoomStatus.Value then
+			Functions.Notify({
+				Title = "Room " .. tostring(LatestRoom.Value),
+				Body = "Correct Room"
+			})
+		end
 	end)
 
 	Connections.SlideHandler = Character:GetAttributeChangedSignal("CanSlide"):Connect(function()
@@ -3278,10 +3340,8 @@ Functions.HandleCharacter = function(NewCharacter)
 			end
 		end
 
-		if RemotesFolder:FindFirstChild("Crouch") and tick() - Globals.LastCrouchFire > 0.1 then
-			local IsCrouch = Functions.IsCrouching()
-			if Toggles.CrouchSpoof.Value or Toggles.PositionSpoof.Value then IsCrouch = true end
-			RemotesFolder.Crouch:FireServer(IsCrouch, true)
+		if (Toggles.CrouchSpoof.Value or Toggles.PositionSpoof.Value) and RemotesFolder:FindFirstChild("Crouch") and tick() - Globals.LastCrouchFire > 0.1 then
+			RemotesFolder.Crouch:FireServer(true, true)
 			Globals.LastCrouchFire = tick()
 		end
 
@@ -3331,11 +3391,12 @@ Functions.HandleCharacter = function(NewCharacter)
 			Camera.CFrame = CamPosition
 		end
 
-		if Main_Game then
-			task.wait()
-			Main_Game.fovtarget = Options.FieldOfView.Value
-		else
-			Camera.FieldOfView = Options.FieldOfView.Value
+		if Toggles.FieldOfViewToggle.Value then
+			if Main_Game then
+				Main_Game.fovtarget = Options.FieldOfView.Value
+			else
+				Camera.FieldOfView = Options.FieldOfView.Value
+			end
 		end
 
 		if Toggles.RemoveClosetDelay.Value
@@ -3343,7 +3404,9 @@ Functions.HandleCharacter = function(NewCharacter)
 			and (CollisionPart.Anchored or RootPart.Anchored)
 			and Character:GetAttribute("AnimatingClient") ~= true
 			and Character:GetAttribute("Hiding") == true
+			and tick() - (Globals.LastClosetExitFire or 0) > 0.6
 		then
+			Globals.LastClosetExitFire = tick()
 			RemotesFolder.CamLock:FireServer()
 		end
 
@@ -3570,7 +3633,7 @@ Functions.HandleObject = function(Object)
 				W.Part0 = HP W.Part1 = DoorPart W.Enabled = true
 			end
 			table.insert(Objects.Doors, HighlightModel)
-			if Toggles.DoorESPToggle.Value then Functions.AddESP({ Object = HighlightModel, Text = "Door " .. Functions.GetDoorNumber(Object), Color = Options.DoorESPColor.Value }, true) end
+			if Toggles.DoorESPToggle.Value then Functions.AddESP({ Object = HighlightModel, Text = "Door " .. Functions.GetDoorNumber(Object) .. " [CORRECT]", Color = Options.DoorESPColor.Value }, true) end
 		else
 			local Root = Object:WaitForChild("Door", 9e9)
 			local HP = Instance.new("Part", Object)
@@ -3585,7 +3648,7 @@ Functions.HandleObject = function(Object)
 			W.Part0 = HP W.Part1 = Root W.Enabled = true
 			Instance.new("Humanoid", Object).Name = "HighlightHumanoid"
 			table.insert(Objects.Doors, HP)
-			if Toggles.DoorESPToggle.Value then Functions.AddESP({ Object = HP, Text = "Door " .. Functions.GetDoorNumber(Object), Color = Options.DoorESPColor.Value }, true) end
+			if Toggles.DoorESPToggle.Value then Functions.AddESP({ Object = HP, Text = "Door " .. Functions.GetDoorNumber(Object) .. " [CORRECT]", Color = Options.DoorESPColor.Value }, true) end
 		end
 
 		local LastDoorFire = tick()
@@ -3896,7 +3959,14 @@ Functions.HandleObject = function(Object)
 				if Lock and Lock:FindFirstChild("UnlockPrompt") then Lock.UnlockPrompt.Enabled = false end
 			end
 			if Toggles.EntityESPToggle.Value and Options.EntityESPOptions.Value["Dupe"] then
-				Functions.AddESP({ Object = Object, Text = "Dupe", Color = Options.EntityESPColor.Value }, true)
+				Functions.AddESP({ Object = Object, Text = "Dupe (Fake Door)", Color = Options.EntityESPColor.Value }, true)
+			end
+			if Toggles.NotifyRoomStatus and Toggles.NotifyRoomStatus.Value then
+				Functions.Notify({
+					Title = "Fake Door Detected!",
+					Body = "Warning: Dupe / Fake door in Room " .. tostring(LatestRoom.Value) .. "!",
+					Image = EntityIcons["Dupe"]
+				})
 			end
 			table.insert(Objects.Entities, Object)
 		end
@@ -4350,32 +4420,30 @@ Functions.TriggerPrompt = function(Prompt)
 	if not Prompt or not Prompt.Parent then return end
 	if TriggerDebounce then return end
 
+	local IsJunk = Options.AutoInteractIgnoreList.Value["Junk"]
+
 	local IsSeatPrompt = Prompt.Name == "SeatPrompt" or Prompt.ActionText == "Seat" or (Prompt.Parent and (Prompt.Parent:IsA("Seat") or Prompt.Parent:IsA("VehicleSeat") or Prompt.Parent.Name == "SeatPart"))
-	if IsSeatPrompt then
-		if Toggles.AutoInteractIgnoreSeats.Value or Options.AutoInteractIgnoreList.Value["Seats / Chairs"] then
-			return
-		end
+	if IsSeatPrompt and (IsJunk or Toggles.AutoInteractIgnoreSeats.Value) then
+		return
 	end
 
 	local IsPushPrompt = Prompt.Name == "CartPrompt" or Prompt.ActionText == "Push"
-	if IsPushPrompt then
-		if (Toggles.DisablePushChairsToggle and Toggles.DisablePushChairsToggle.Value) or Options.AutoInteractIgnoreList.Value["Push Prompts"] then
-			return
-		end
+	if IsPushPrompt and (IsJunk or (Toggles.DisablePushChairsToggle and Toggles.DisablePushChairsToggle.Value)) then
+		return
 	end
 
 	local IsPrinter = Prompt.Name == "LidPrompt"
 		or Prompt.ObjectText == "Lid"
 		or (Prompt.Parent and (Prompt.Parent.Name == "Lid" or Prompt.Parent.Name == "PrintedPaper" or Prompt.Parent.Name:find("Printer")))
 		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Printer"))
-	if IsPrinter then
+	if IsPrinter and IsJunk then
 		return
 	end
 
 	local IsTerminal = Prompt.ObjectText == "Anchor"
 		or (Prompt.Parent and Prompt.Parent.Name == "ArchivesTerminal")
 		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name == "ArchivesTerminal")
-	if IsTerminal and Options.AutoInteractIgnoreList.Value["Terminals"] then
+	if IsTerminal and IsJunk then
 		return
 	end
 
@@ -4383,7 +4451,7 @@ Functions.TriggerPrompt = function(Prompt)
 		or Prompt.ObjectText == "Trashcan"
 		or (Prompt.Parent and Prompt.Parent.Name:find("Trashcan"))
 		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Trashcan"))
-	if IsTrashcan and Options.AutoInteractIgnoreList.Value["Trashcans"] then
+	if IsTrashcan and IsJunk then
 		return
 	end
 
@@ -4391,23 +4459,36 @@ Functions.TriggerPrompt = function(Prompt)
 		or Prompt.ObjectText == "Fih Tank"
 		or (Prompt.Parent and Prompt.Parent.Name:find("Fih"))
 		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Fih"))
-	if IsFishTank and Options.AutoInteractIgnoreList.Value["Fish Tank"] then
+	if IsFishTank and IsJunk then
 		return
 	end
 
-	local IsLockerLoot = (Prompt.ActionText == "Loot" and (Prompt.ObjectText == "Wardrobe" or Prompt.ObjectText == "Locker"))
-		and not Prompt.Parent.Name:find("Broken")
-		and not (Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Broken"))
+	local IsHidePrompt = Prompt.Name == "HidePrompt"
+		or Prompt.ActionText == "Hide"
+		or Prompt.ActionText == "Enter"
+		or (Prompt.ObjectText and Prompt.ObjectText:find("Bed"))
 
-	if IsLockerLoot then
-		if OpenedLootWardrobes[Prompt] or (Prompt.Parent and OpenedLootWardrobes[Prompt.Parent]) then
-			return
-		end
-		if not Toggles.AutoInteractLockers.Value or Options.AutoInteractIgnoreList.Value["Lockers"] then
-			return
-		end
-	elseif Prompt.ObjectText == "Wardrobe" or Prompt.ObjectText == "Locker" or Prompt.Name == "HidePrompt" then
+	local IsLockerOrWardrobe = (Prompt.ObjectText == "Wardrobe" or Prompt.ObjectText == "Locker")
+		or (Prompt.Parent and (Prompt.Parent.Name:find("Locker") or Prompt.Parent.Name:find("Wardrobe")))
+		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name:find("Locker") or Prompt.Parent.Parent.Name:find("Wardrobe")))
+
+	local IsBrokenLocker = (Prompt.Parent and Prompt.Parent.Name:find("Broken"))
+		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Broken"))
+
+	if IsHidePrompt then
 		return
+	end
+
+	if IsLockerOrWardrobe then
+		if IsBrokenLocker then return end
+		if Prompt.ActionText == "Close" then return end
+		if not Toggles.AutoInteractLockers.Value then return end
+		if OpenedLootWardrobes[Prompt]
+			or (Prompt.Parent and OpenedLootWardrobes[Prompt.Parent])
+			or (Prompt.Parent and Prompt.Parent.Parent and OpenedLootWardrobes[Prompt.Parent.Parent])
+		then
+			return
+		end
 	elseif AutoInteractBlacklist[Prompt.Name] then
 		return
 	end
@@ -4486,9 +4567,10 @@ Functions.TriggerPrompt = function(Prompt)
 	if Prompt.Parent.Name == "AlarmClock" and Functions.HasItem("AlarmClock") then return end
 	if Prompt.Parent.Name == "KeyObtainFake" or Prompt.Parent.Name == "TithingPlate" then return end
 
-	if Prompt.ActionText == "Loot" and (Prompt.ObjectText == "Wardrobe" or Prompt.ObjectText == "Locker") then
+	if IsLockerOrWardrobe then
 		OpenedLootWardrobes[Prompt] = true
 		if Prompt.Parent then OpenedLootWardrobes[Prompt.Parent] = true end
+		if Prompt.Parent and Prompt.Parent.Parent then OpenedLootWardrobes[Prompt.Parent.Parent] = true end
 	end
 
 	Functions.FirePrompt(Prompt)
@@ -4501,6 +4583,7 @@ Globals.LastAutoInteractFire = tick()
 Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 	local Active = Toggles.AutoInteractToggle.Value or Options.AutoInteractKeybind:GetState()
     if not Active then return end
+    if Character and Character:GetAttribute("Hiding") == true then return end
     if tick() - Globals.LastAutoInteractFire < 1/60 then return end
 
 	for _, Prompt in Objects.Prompts do
