@@ -223,7 +223,14 @@ local ItemNames = {
 	["FihFlakes"]         = "Fish Flakes",
 	["WaterCup"]          = "Water Cup",
 	["PocketMirror"]      = "Pocket Mirror",
-	["ArchivesStorageBox"] = "Storage Box"
+	["ArchivesStorageBox"] = "Storage Box",
+	["Leftovers"]         = "Leftovers",
+	["Briefcase"]         = "Briefcase",
+	["Lunchbox"]          = "Lunchbox",
+	["LunchBox"]          = "Lunchbox",
+	["WaitingTicket"]     = "Waiting Ticket",
+	["Ticket"]            = "Ticket",
+	["PaperCup"]          = "Paper Cup"
 }
 
 local CutsceneNames = {
