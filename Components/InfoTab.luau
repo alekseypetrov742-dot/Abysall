@@ -1,5 +1,12 @@
 return function(Window)
     local LatestChangelog = {
+        "14/9/2026 (Update 3)",
+        "<font color='rgb(0, 255, 0)'>+ Correct Room status & [CORRECT] tag now only show in minigames / fake door rooms</font>",
+        "<font color='rgb(0, 255, 0)'>+ Fixed Auto Interact to open ALL lockers, multi-door wardrobes, cabinets, desks & drawers</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Shakelight (10 coin green flashlight) vending machine to Junk filter</font>",
+        "<font color='rgb(0, 255, 0)'>+ Fixed Position Spoof: smooth normal movement & jumping without sinking into floor</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Bypass Electrified Water: completely blocks electric puddle damage</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added full immunity & collision bypass for Drone Stampede / Rush Hour running drones</font>",
         "14/9/2026 (Update 2)",
         "<font color='rgb(0, 255, 0)'>+ Fixed FOV stutter/glitches (Added Custom Field of View toggle)</font>",
         "<font color='rgb(0, 255, 0)'>+ Fixed Crouch & Shift locking; enabled Jumping by default</font>",

@@ -40,6 +40,7 @@ local Objects = {
 	WaterCups = {},
 	Coolers = {},
 	Drones = {},
+	ElectricWater = {},
 	Chairs = {},
 	Chests = {},
 	Currency = {},
@@ -971,6 +972,30 @@ Functions.GetDoorNumber = function(Object)
 	return tostring(DoorNumber)
 end
 
+Functions.IsMinigameOrFakeDoorRoom = function(Room)
+	if not Room then return false end
+	if Room:FindFirstChild("DoorFake", true) or Room:FindFirstChild("FakeDoor", true) then
+		return true
+	end
+	if Room:FindFirstChild("Minigame", true) or Room:FindFirstChild("Anomaly", true)
+		or Room:GetAttribute("Minigame") or Room:GetAttribute("Anomaly")
+		or Room:GetAttribute("Exit8") or Room:FindFirstChild("Exit8", true) then
+		return true
+	end
+	return false
+end
+
+Functions.GetDoorESPText = function(Object)
+	local Room = Object.Parent
+	local HasFake = Functions.IsMinigameOrFakeDoorRoom(Room)
+	local DoorNum = Functions.GetDoorNumber(Object)
+	if HasFake then
+		return "Door " .. DoorNum .. " [CORRECT]"
+	else
+		return "Door " .. DoorNum
+	end
+end
+
 Functions.GetLibraryCode = function()
 	local Paper = Character:FindFirstChild("LibraryHintPaper")
 		or Character:FindFirstChild("LibraryHintPaperHard")
@@ -1309,6 +1334,7 @@ Groupboxes.Exploits_Bypass:AddToggle("BypassSnare",          { Text = "Bypass Sn
 Groupboxes.Exploits_Bypass:AddToggle("BypassBanana",         { Text = "Bypass Banana",           Default = false, Tooltip = "Prevents 'Banana Peel' from slipping you up (sometimes doesn't work)." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassJeff",           { Text = "Bypass Jeff",             Default = false, Tooltip = "Prevents 'Jeff the Killer' from stabbing you (sometimes doesn't work)." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassDrones",         { Text = "Bypass Drones",           Default = false, Tooltip = "Walk through Drones without collision and prevents them from damaging you." })
+Groupboxes.Exploits_Bypass:AddToggle("BypassElectricWater",  { Text = "Bypass Electrified Water", Default = true, Tooltip = "Prevents electrified water in The Archives from damaging you." })
 
 Toggles.BypassGiggle:OnChanged(function(Value)
 	for _, Object in Objects.Entities do
@@ -1421,10 +1447,32 @@ end)
 
 Toggles.BypassDrones:OnChanged(function(Value)
 	for _, Object in Objects.Drones do
-		local Collider = Object:FindFirstChild("PaperCollider")
-		if Collider and Collider:IsA("BasePart") then
-			Collider.CanCollide = not Value
-			Collider.CanTouch = not Value
+		if Object and Object.Parent then
+			if Object:IsA("BasePart") then
+				Object.CanCollide = not Value
+				Object.CanTouch = not Value
+			end
+			for _, desc in Object:GetDescendants() do
+				if desc:IsA("BasePart") then
+					desc.CanCollide = not Value
+					desc.CanTouch = not Value
+				end
+			end
+		end
+	end
+end)
+
+Toggles.BypassElectricWater:OnChanged(function(Value)
+	for _, Object in Objects.ElectricWater do
+		if Object and Object.Parent then
+			if Object:IsA("BasePart") then
+				Object.CanTouch = not Value
+			end
+			for _, desc in Object:GetDescendants() do
+				if desc:IsA("BasePart") then
+					desc.CanTouch = not Value
+				end
+			end
 		end
 	end
 end)
@@ -1477,15 +1525,14 @@ Groupboxes.Exploits_BypassRight:AddToggle("CrouchSpoof", {
 	Text = "Crouch Spoof", Default = false, Tooltip = "Makes the game think you are always crouching."
 })
 Toggles.PositionSpoof:OnChanged(function(Value)
-	if Floor ~= "Fools" and Floor ~= "OldHotel" then
-		if Value then
-			RootPart.CFrame = RootPart.CFrame * CFrame.new(0, -2.346, 0)
-			Humanoid.HipHeight = 0.05
-			RemotesFolder.Crouch:FireServer(true, true)
-		else
-			RootPart.CFrame = RootPart.CFrame * CFrame.new(0, 2.346, 0)
-			Humanoid.HipHeight = 2.396
-		end
+	if Humanoid and Humanoid.HipHeight < 1 then
+		Humanoid.HipHeight = 2.396
+	end
+	if Character and Character:FindFirstChild("LowerTorso") and Character.LowerTorso:FindFirstChild("Root") and Globals.OriginalC1 then
+		Character.LowerTorso.Root.C1 = Globals.OriginalC1
+	end
+	if RemotesFolder:FindFirstChild("Crouch") then
+		RemotesFolder.Crouch:FireServer(Value and true or Functions.IsCrouching(), true)
 	end
 end)
 Toggles.PositionSpoof:AddKeyPicker("PositionSpoof", {
@@ -1958,7 +2005,7 @@ local NodeEntities = {
 
 Toggles.DoorESPToggle:OnChanged(function(Value)
 	for _, Object in Objects.Doors do
-		if Value then Functions.AddESP({ Object = Object, Text = "Door " .. Functions.GetDoorNumber(Object) .. " [CORRECT]", Color = Options.DoorESPColor.Value }, true)
+		if Value then Functions.AddESP({ Object = Object, Text = Functions.GetDoorESPText(Object), Color = Options.DoorESPColor.Value }, true)
 		else Functions.RemoveESP(Object) end
 	end
 end)
@@ -2774,8 +2821,15 @@ if Functions.CheckCompatability({"hookmetamethod", "newcclosure", "getnamecallme
 				return
 			end
 
-			if (Self.Name == "WalkedInto" or Self.Name == "ShoulderChecked") and Method == "FireServer" and Toggles.BypassDrones and Toggles.BypassDrones.Value then
+			if (Self.Name == "WalkedInto" or Self.Name == "ShoulderChecked" or Self.Name:find("Drone") or Self.Name:find("Stampede") or Self.Name == "Trample" or Self.Name == "Stomp" or Self.Name == "Knockback" or Self.Name == "Push") and Method == "FireServer" and Toggles.BypassDrones and Toggles.BypassDrones.Value then
 				return
+			end
+
+			if Toggles.BypassElectricWater and Toggles.BypassElectricWater.Value and Method == "FireServer" then
+				local remoteName = Self.Name
+				if remoteName:find("Electric") or remoteName:find("Shock") or remoteName:find("Electrocute") or remoteName:find("WaterDamage") or remoteName:find("Puddle") or remoteName:find("Zap") then
+					return
+				end
 			end
 
 			if Self.Name == "MotorReplication" and Method == "FireServer" then
@@ -3112,10 +3166,13 @@ Functions.HandleCharacter = function(NewCharacter)
 
 	Connections.RoomStatusNotifier = LatestRoom:GetPropertyChangedSignal("Value"):Connect(function()
 		if Toggles.NotifyRoomStatus and Toggles.NotifyRoomStatus.Value then
-			Functions.Notify({
-				Title = "Room " .. tostring(LatestRoom.Value),
-				Body = "Correct Room"
-			})
+			local CurrentRoom = CurrentRooms and CurrentRooms:FindFirstChild(tostring(LatestRoom.Value))
+			if CurrentRoom and Functions.IsMinigameOrFakeDoorRoom(CurrentRoom) then
+				Functions.Notify({
+					Title = "Room " .. tostring(LatestRoom.Value),
+					Body = "Correct Room"
+				})
+			end
 		end
 	end)
 
@@ -3292,26 +3349,29 @@ Functions.HandleCharacter = function(NewCharacter)
 				RootPart.CanCollide = not (Toggles.NoclipToggle.Value or Toggles.VelocityManipulationToggle.Value)
 			end
 
-			if Character:FindFirstChild("LowerTorso") and Character.LowerTorso:FindFirstChild("Root") then
-				Character.LowerTorso.Root.C1 = Globals.OriginalC1 * CFrame.new(0, Toggles.PositionSpoof.Value and -2.346 or 0, 0)
+			if Character:FindFirstChild("LowerTorso") and Character.LowerTorso:FindFirstChild("Root") and Globals.OriginalC1 then
+				Character.LowerTorso.Root.C1 = Globals.OriginalC1
 			end
 
-			local SpoofY = Toggles.PositionSpoof.Value and 2.328 or 0.18
-			Collision.Position     = RootPart.Position + Vector3.new(0, SpoofY, 0)
-			CollisionPart.Position = RootPart.Position + Vector3.new(0, SpoofY, 0)
+			local SpoofOffset = Toggles.PositionSpoof.Value and 200 or 0
+			Collision.Position     = RootPart.Position + Vector3.new(0, 0.18 + SpoofOffset, 0)
+			CollisionPart.Position = RootPart.Position + Vector3.new(0, 0.18 + SpoofOffset, 0)
+			Collision.CanTouch = not Toggles.PositionSpoof.Value
+			CollisionPart.CanTouch = not Toggles.PositionSpoof.Value
 
 			if Collision:FindFirstChild("CollisionCrouch") and CollisionClone:FindFirstChild("CollisionCrouch") then
-				local CrouchY = Toggles.PositionSpoof.Value and 1.328 or -0.982
-				Collision.CollisionCrouch.Position = RootPart.Position + Vector3.new(0, CrouchY, 0)
+				local CrouchY = -0.982
+				Collision.CollisionCrouch.Position = RootPart.Position + Vector3.new(0, CrouchY + SpoofOffset, 0)
+				Collision.CollisionCrouch.CanTouch = not Toggles.PositionSpoof.Value
 				CollisionClone.CollisionCrouch.CollisionGroup = Collision.CollisionCrouch.CollisionGroup
 			end
 			if CollisionClone:FindFirstChild("CollisionCrouch") then
-				CollisionClone.CollisionCrouch.Position = RootPart.Position + Vector3.new(0, Toggles.PositionSpoof.Value and 0.75 or -0.982, 0)
+				CollisionClone.CollisionCrouch.Position = RootPart.Position + Vector3.new(0, -0.982, 0)
 			end
 		end
 
 		CollisionClone.CollisionGroup = Collision.CollisionGroup
-		CollisionClone.Position = RootPart.Position + Vector3.new(0, Toggles.PositionSpoof.Value and 1.75 or 0.18, 0)
+		CollisionClone.Position = RootPart.Position + Vector3.new(0, 0.18, 0)
 
 		if Toggles.VelocityManipulationToggle.Value and Options.VelocityManipulationMode.Value == "Velocity" then
 			Globals.ManipulateBody.Parent = RootPart
@@ -3429,9 +3489,7 @@ Functions.HandleCharacter = function(NewCharacter)
 	end)
 
 	task.wait(1)
-	if Toggles.PositionSpoof.Value and Floor ~= "Fools" and Floor ~= "OldHotel" then
-		RootPart.CFrame = RootPart.CFrame * CFrame.new(0, -2.346, 0)
-		Humanoid.HipHeight = 0.05
+	if Toggles.PositionSpoof.Value and RemotesFolder:FindFirstChild("Crouch") then
 		RemotesFolder.Crouch:FireServer(true, true)
 	end
 
@@ -3633,7 +3691,7 @@ Functions.HandleObject = function(Object)
 				W.Part0 = HP W.Part1 = DoorPart W.Enabled = true
 			end
 			table.insert(Objects.Doors, HighlightModel)
-			if Toggles.DoorESPToggle.Value then Functions.AddESP({ Object = HighlightModel, Text = "Door " .. Functions.GetDoorNumber(Object) .. " [CORRECT]", Color = Options.DoorESPColor.Value }, true) end
+			if Toggles.DoorESPToggle.Value then Functions.AddESP({ Object = HighlightModel, Text = Functions.GetDoorESPText(Object), Color = Options.DoorESPColor.Value }, true) end
 		else
 			local Root = Object:WaitForChild("Door", 9e9)
 			local HP = Instance.new("Part", Object)
@@ -3648,7 +3706,7 @@ Functions.HandleObject = function(Object)
 			W.Part0 = HP W.Part1 = Root W.Enabled = true
 			Instance.new("Humanoid", Object).Name = "HighlightHumanoid"
 			table.insert(Objects.Doors, HP)
-			if Toggles.DoorESPToggle.Value then Functions.AddESP({ Object = HP, Text = "Door " .. Functions.GetDoorNumber(Object) .. " [CORRECT]", Color = Options.DoorESPColor.Value }, true) end
+			if Toggles.DoorESPToggle.Value then Functions.AddESP({ Object = HP, Text = Functions.GetDoorESPText(Object), Color = Options.DoorESPColor.Value }, true) end
 		end
 
 		local LastDoorFire = tick()
@@ -3866,15 +3924,46 @@ Functions.HandleObject = function(Object)
 				Functions.Notify({ Title = "Water Cooler has spawned." })
 			end
 		end
-	elseif Name == "Drones" then
+	elseif (Name == "Drones" or Name == "Drone" or Name:find("Drone") or Name:find("Stampede") or Name == "RushHour" or Name == "RunningDrone") and not Name:find("PaperPlane") then
 		table.insert(Objects.Drones, Object)
 		if Toggles.BypassDrones and Toggles.BypassDrones.Value then
-			local Collider = Object:FindFirstChild("PaperCollider")
-			if Collider and Collider:IsA("BasePart") then
-				Collider.CanCollide = false
-				Collider.CanTouch = false
+			if Object:IsA("BasePart") then
+				Object.CanCollide = false
+				Object.CanTouch = false
+			end
+			for _, desc in Object:GetDescendants() do
+				if desc:IsA("BasePart") then
+					desc.CanCollide = false
+					desc.CanTouch = false
+				end
 			end
 		end
+		Object.DescendantAdded:Connect(function(desc)
+			if Toggles.BypassDrones and Toggles.BypassDrones.Value and desc:IsA("BasePart") then
+				desc.CanCollide = false
+				desc.CanTouch = false
+			end
+		end)
+	elseif Name == "ElectricWater" or Name == "ElectrifiedWater" or Name == "ElectricPuddle" or Name == "WaterHazard"
+		or (Name:find("Puddle") and not Name:find("Blood"))
+		or (Name:find("Electric") and not (Name:find("Key") or Name:find("Breaker") or Name:find("Elevator")))
+		or (Name:find("Shock") and not Name:find("Shop")) then
+		table.insert(Objects.ElectricWater, Object)
+		if Toggles.BypassElectricWater and Toggles.BypassElectricWater.Value then
+			if Object:IsA("BasePart") then
+				Object.CanTouch = false
+			end
+			for _, desc in Object:GetDescendants() do
+				if desc:IsA("BasePart") then
+					desc.CanTouch = false
+				end
+			end
+		end
+		Object.DescendantAdded:Connect(function(desc)
+			if Toggles.BypassElectricWater and Toggles.BypassElectricWater.Value and desc:IsA("BasePart") then
+				desc.CanTouch = false
+			end
+		end)
 	elseif Name == "WaterCup" and Object:FindFirstChild("ModulePrompt") then
 		table.insert(Objects.WaterCups, Object)
 		table.insert(Objects.Items, Object)
@@ -3967,6 +4056,14 @@ Functions.HandleObject = function(Object)
 					Body = "Warning: Dupe / Fake door in Room " .. tostring(LatestRoom.Value) .. "!",
 					Image = EntityIcons["Dupe"]
 				})
+			end
+			local RealDoor = Object.Parent and Object.Parent:FindFirstChild("Door")
+			if RealDoor and Toggles.DoorESPToggle.Value then
+				for _, d in Objects.Doors do
+					if d.Parent == RealDoor or d == RealDoor then
+						Functions.AddESP({ Object = d, Text = "Door " .. Functions.GetDoorNumber(RealDoor) .. " [CORRECT]", Color = Options.DoorESPColor.Value }, true)
+					end
+				end
 			end
 			table.insert(Objects.Entities, Object)
 		end
@@ -4258,11 +4355,16 @@ local AllowedInstances = {
 	RiftSpawn=true, ElevatorBreaker=true, RunnerNodes=true, PathLights=true, DuckBoard=true,
 	Padlock=true, EyestalkEndCutscene=true, MinecartRig=true, SeekMovingNewClone=true,
 	ArchivesWaterCooler=true, Drones=true, ArchivesOfficeChair=true, ArchivesTrashcan=true,
-	ArchivesTerminal=true, ArchivesFihTank=true, ArchivesLargePrinter=true
+	ArchivesTerminal=true, ArchivesFihTank=true, ArchivesLargePrinter=true,
+	Drone=true, DroneStampede=true, Stampede=true, RushHour=true, RunningDrone=true, Runner=true,
+	ElectricWater=true, ElectrifiedWater=true, ElectricPuddle=true, WaterHazard=true, Puddle=true, Puddles=true
 }
 
 Functions.QueueObject = function(Object)
-	if not AllowedInstances[Object.Name] and Object.ClassName ~= "ProximityPrompt" and Object.Parent ~= CurrentRooms and not ItemNames[Object.Name] then
+	local Name = Object.Name
+	local isDrone = Name == "Drones" or Name == "Drone" or Name:find("Drone") or Name:find("Stampede") or Name == "RushHour" or Name == "RunningDrone" or Name == "Runner"
+	local isElectric = Name:find("Electric") or Name:find("Shock") or Name:find("Puddle") or (Name:find("Water") and not (Name:find("Cup") or Name:find("Pump") or Name:find("Cooler")))
+	if not AllowedInstances[Name] and not isDrone and not isElectric and Object.ClassName ~= "ProximityPrompt" and Object.Parent ~= CurrentRooms and not ItemNames[Name] then
 		return
 	end
 	table.insert(Globals.ObjectQueue, Object)
@@ -4463,17 +4565,30 @@ Functions.TriggerPrompt = function(Prompt)
 		return
 	end
 
+	local IsVendingMachine = (Prompt.ObjectText and (Prompt.ObjectText:find("Vending") or Prompt.ObjectText:find("Shakelight")))
+		or (Prompt.Parent and (Prompt.Parent.Name:find("Vending") or Prompt.Parent.Name:find("Shakelight")))
+		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name:find("Vending") or Prompt.Parent.Parent.Name:find("Shakelight")))
+		or (Prompt.ActionText and (Prompt.ActionText:find("10 Gold") or Prompt.ActionText:find("10 Coins") or (Prompt.ActionText:find("Purchase") and Prompt.ObjectText:find("Flashlight"))))
+	if IsVendingMachine and IsJunk then
+		return
+	end
+
 	local IsHidePrompt = Prompt.Name == "HidePrompt"
 		or Prompt.ActionText == "Hide"
 		or Prompt.ActionText == "Enter"
 		or (Prompt.ObjectText and Prompt.ObjectText:find("Bed"))
 
-	local IsLockerOrWardrobe = (Prompt.ObjectText == "Wardrobe" or Prompt.ObjectText == "Locker")
-		or (Prompt.Parent and (Prompt.Parent.Name:find("Locker") or Prompt.Parent.Name:find("Wardrobe")))
-		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name:find("Locker") or Prompt.Parent.Parent.Name:find("Wardrobe")))
+	local ModelAncestor = Prompt:FindFirstAncestorOfClass("Model")
+	local ModelName = ModelAncestor and ModelAncestor.Name or ""
+	local ParentName = Prompt.Parent and Prompt.Parent.Name or ""
+	local ObjText = Prompt.ObjectText or ""
 
-	local IsBrokenLocker = (Prompt.Parent and Prompt.Parent.Name:find("Broken"))
-		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Broken"))
+	local IsLockerOrWardrobe = (ObjText == "Wardrobe" or ObjText == "Locker" or ObjText == "Cabinet" or ObjText == "Drawer" or ObjText == "Desk")
+		or ParentName:find("Locker") or ParentName:find("Wardrobe") or ParentName:find("Cabinet") or ParentName:find("Drawer") or ParentName:find("Desk") or ParentName:find("Toolshed")
+		or ModelName:find("Locker") or ModelName:find("Wardrobe") or ModelName:find("Cabinet") or ModelName:find("Drawer") or ModelName:find("Desk") or ModelName:find("Toolshed")
+		or (Prompt.ActionText == "Open" and not ParentName:find("Door") and not ModelName:find("Door"))
+
+	local IsBrokenLocker = ParentName:find("Broken") or ModelName:find("Broken")
 
 	if IsHidePrompt then
 		return
@@ -4483,10 +4598,7 @@ Functions.TriggerPrompt = function(Prompt)
 		if IsBrokenLocker then return end
 		if Prompt.ActionText == "Close" then return end
 		if not Toggles.AutoInteractLockers.Value then return end
-		if OpenedLootWardrobes[Prompt]
-			or (Prompt.Parent and OpenedLootWardrobes[Prompt.Parent])
-			or (Prompt.Parent and Prompt.Parent.Parent and OpenedLootWardrobes[Prompt.Parent.Parent])
-		then
+		if OpenedLootWardrobes[Prompt] then
 			return
 		end
 	elseif AutoInteractBlacklist[Prompt.Name] then
@@ -4569,8 +4681,6 @@ Functions.TriggerPrompt = function(Prompt)
 
 	if IsLockerOrWardrobe then
 		OpenedLootWardrobes[Prompt] = true
-		if Prompt.Parent then OpenedLootWardrobes[Prompt.Parent] = true end
-		if Prompt.Parent and Prompt.Parent.Parent then OpenedLootWardrobes[Prompt.Parent.Parent] = true end
 	end
 
 	Functions.FirePrompt(Prompt)
