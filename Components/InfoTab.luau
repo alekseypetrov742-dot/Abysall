@@ -1,5 +1,12 @@
 return function(Window)
     local LatestChangelog = {
+        "14/9/2026 (Update 5)",
+        "<font color='rgb(0, 255, 0)'>+ Fixed Auto Interact picking up Storage Boxes (added to ignore list & blacklisted)</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Auto Turnstyles (run straight through turnstyles without stopping)</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Bypass Crouch Barriers (sprint through low crawl barriers without crouching)</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Auto Chase Terminals (automatically opens gate terminals during chases)</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Auto Deposit Packages (instant package drop-off on approach)</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Storage Box ESP to Item ESP</font>",
         "14/9/2026 (Update 4)",
         "<font color='rgb(0, 255, 0)'>+ Completely blocked Forget-Me-Not flower doors from Auto Interact (no more bite damage)</font>",
         "<font color='rgb(0, 255, 0)'>+ Improved Electrified Water Bypass with collision pads (0 damage from CurrentsPuddle)</font>",

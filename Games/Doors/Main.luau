@@ -53,7 +53,10 @@ local Objects = {
 	SeekNodes = {},
 	SeekDuckBoards = {},
 	SeekBridges = {},
-	PathLights = {}
+	PathLights = {},
+	StorageBoxes = {},
+	OneWayDoors = {},
+	CrouchBarriers = {}
 }
 
 Globals.IncompatibleMessage = "Your executor doesn't support this feature."
@@ -219,7 +222,8 @@ local ItemNames = {
 	["PaperPlane"]        = "Paper Airplane",
 	["FihFlakes"]         = "Fish Flakes",
 	["WaterCup"]          = "Water Cup",
-	["PocketMirror"]      = "Pocket Mirror"
+	["PocketMirror"]      = "Pocket Mirror",
+	["ArchivesStorageBox"] = "Storage Box"
 }
 
 local CutsceneNames = {
@@ -1286,8 +1290,8 @@ Toggles.AutoInteractToggle:AddKeyPicker("AutoInteractKeybind", {
 })
 Groupboxes.Self_Automation:AddDropdown("AutoInteractIgnoreList", {
 	Text = "Ignore List",
-	Values = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks" },
-	Default = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items" },
+	Values = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks", "Storage Boxes" },
+	Default = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items", "Storage Boxes" },
 	Multi = true, AllowNull = true
 })
 Groupboxes.Self_Automation:AddToggle("AutoInteractIgnoreSeats", {
@@ -1298,6 +1302,15 @@ Groupboxes.Self_Automation:AddToggle("DisablePushChairsToggle", {
 })
 Groupboxes.Self_Automation:AddToggle("AutoInteractLockers", {
 	Text = "Loot Lockers", Default = true, Tooltip = "Automatically loots unbroken lockers and wardrobes (coins/loot) once."
+})
+Groupboxes.Self_Automation:AddToggle("AutoTurnstyles", {
+	Text = "Auto Turnstyles", Default = true, Tooltip = "Automatically triggers turnstyles so you run straight through them without stopping."
+})
+Groupboxes.Self_Automation:AddToggle("AutoPackageDeposit", {
+	Text = "Auto Deposit Packages", Default = true, Tooltip = "Automatically deposits packages into deposit stations on approach."
+})
+Groupboxes.Self_Automation:AddToggle("AutoChaseTerminals", {
+	Text = "Auto Chase Terminals", Default = true, Tooltip = "Automatically activates terminals during Archives chases to open gates."
 })
 Groupboxes.Self_Automation:AddDivider()
 Groupboxes.Self_Automation:AddToggle("AutoClosetToggle", {
@@ -1371,6 +1384,7 @@ Groupboxes.Exploits_Bypass:AddToggle("BypassBanana",         { Text = "Bypass Ba
 Groupboxes.Exploits_Bypass:AddToggle("BypassJeff",           { Text = "Bypass Jeff",             Default = false, Tooltip = "Prevents 'Jeff the Killer' from stabbing you (sometimes doesn't work)." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassDrones",         { Text = "Bypass Drones",           Default = false, Tooltip = "Walk through Drones without collision and prevents them from damaging you." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassElectricWater",  { Text = "Bypass Electrified Water", Default = true, Tooltip = "Prevents electrified water in The Archives from damaging you." })
+Groupboxes.Exploits_Bypass:AddToggle("NoSlowdownBarriers",   { Text = "Bypass Crouch Barriers",  Default = true, Tooltip = "Walk and sprint straight through low crawl barriers in The Archives without crouching." })
 
 Toggles.BypassGiggle:OnChanged(function(Value)
 	for _, Object in Objects.Entities do
@@ -1552,6 +1566,14 @@ end
 Toggles.BypassElectricWater:OnChanged(function(Value)
 	for _, Object in Objects.ElectricWater do
 		UpdateElectricPuddle(Object, Value)
+	end
+end)
+
+Toggles.NoSlowdownBarriers:OnChanged(function(Value)
+	for _, Object in Objects.CrouchBarriers do
+		if Object and Object.Parent and Object:IsA("BasePart") then
+			Object.CanCollide = not Value
+		end
 	end
 end)
 
@@ -4068,6 +4090,39 @@ Functions.HandleObject = function(Object)
 				desc.CanCollide = false
 			end
 		end)
+	elseif Name == "ItemOnlyBarrier" or Name:find("ItemOnlyBarrier") then
+		table.insert(Objects.CrouchBarriers, Object)
+		if Object:IsA("BasePart") then
+			if Toggles.NoSlowdownBarriers and Toggles.NoSlowdownBarriers.Value then
+				Object.CanCollide = false
+			end
+			local BarrierConn = Object:GetPropertyChangedSignal("CanCollide"):Connect(function()
+				if Toggles.NoSlowdownBarriers and Toggles.NoSlowdownBarriers.Value and Object.CanCollide then
+					Object.CanCollide = false
+				end
+			end)
+			Object.Destroying:Once(function() BarrierConn:Disconnect() end)
+		end
+	elseif Name == "OneWayTwoHandDoor" then
+		table.insert(Objects.OneWayDoors, Object)
+		local function setupTurnstylePrompt(p)
+			if p:IsA("ProximityPrompt") then
+				if Toggles.InstantPrompts and Toggles.InstantPrompts.Value then p.HoldDuration = 0 end
+				if Toggles.PromptClip and Toggles.PromptClip.Value then p.RequiresLineOfSight = false end
+				if Toggles.AutoTurnstyles and Toggles.AutoTurnstyles.Value then
+					p.HoldDuration = 0
+					p.MaxActivationDistance = math.max(p.MaxActivationDistance, 12)
+				end
+			end
+		end
+		for _, desc in Object:GetDescendants() do setupTurnstylePrompt(desc) end
+		Object.DescendantAdded:Connect(setupTurnstylePrompt)
+	elseif Name == "ArchivesStorageBox" or (Name:find("StorageBox") and not Name:find("Chest")) then
+		table.insert(Objects.StorageBoxes, Object)
+		if Toggles.ItemESPToggle.Value then
+			Functions.AddESP({ Object = Object, Text = "Storage Box", Color = Options.ItemESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil)
+		end
+		table.insert(Objects.Items, Object)
 	elseif Name == "WaterCup" and Object:FindFirstChild("ModulePrompt") then
 		table.insert(Objects.WaterCups, Object)
 		table.insert(Objects.Items, Object)
@@ -4378,6 +4433,10 @@ Functions.HandleObject = function(Object)
 		if (Object.Name == "CartPrompt" or Object.ActionText == "Push") and Toggles.DisablePushChairsToggle and Toggles.DisablePushChairsToggle.Value then
 			Object.Enabled = false
 		end
+		if (Object.ObjectText == "Turnstyle" or (Object.Parent and Object.Parent.Name == "OneWayTwoHandDoor")) and Toggles.AutoTurnstyles and Toggles.AutoTurnstyles.Value then
+			Object.HoldDuration = 0
+			Object.MaxActivationDistance = math.max(Object.MaxActivationDistance, 12)
+		end
 		table.insert(Objects.Prompts, Object)
 	elseif Name == "Padlock" then
 		Connections.PadlockConnection = Services.RunService.Heartbeat:Connect(function()
@@ -4460,6 +4519,7 @@ local AllowedInstances = {
 	Padlock=true, EyestalkEndCutscene=true, MinecartRig=true, SeekMovingNewClone=true,
 	ArchivesWaterCooler=true, Drones=true, ArchivesOfficeChair=true, ArchivesTrashcan=true,
 	ArchivesTerminal=true, ArchivesFihTank=true, ArchivesLargePrinter=true,
+	ItemOnlyBarrier=true, ArchivesStorageBox=true, ArchivesPackageDeposit=true, OneWayTwoHandDoor=true,
 	Drone=true, DroneStampede=true, Stampede=true, RushHour=true, RunningDrone=true, Runner=true,
 	ElectricWater=true, ElectrifiedWater=true, ElectricPuddle=true, WaterHazard=true, Puddle=true, Puddles=true,
 	CurrentsPuddle=true, Pool1=true, Pool2=true, Pool3=true, Pool4=true, Pool5=true, Pool6=true, Pool7=true, Pool8=true
@@ -4469,7 +4529,8 @@ Functions.QueueObject = function(Object)
 	local Name = Object.Name
 	local isDrone = Name == "Drones" or Name == "Drone" or Name:find("Drone") or Name:find("Stampede") or Name == "RushHour" or Name == "RunningDrone" or Name == "Runner"
 	local isElectric = Name:find("Electric") or Name:find("Shock") or Name:find("Puddle") or (Name:find("Water") and not (Name:find("Cup") or Name:find("Pump") or Name:find("Cooler"))) or Object:HasTag("CurrentsPuddle")
-	if not AllowedInstances[Name] and not isDrone and not isElectric and Object.ClassName ~= "ProximityPrompt" and Object.Parent ~= CurrentRooms and not ItemNames[Name] then
+	local isBarrier = Name == "ItemOnlyBarrier" or Name:find("ItemOnlyBarrier")
+	if not AllowedInstances[Name] and not isDrone and not isElectric and not isBarrier and Object.ClassName ~= "ProximityPrompt" and Object.Parent ~= CurrentRooms and not ItemNames[Name] then
 		return
 	end
 	table.insert(Globals.ObjectQueue, Object)
@@ -4637,6 +4698,22 @@ Functions.TriggerPrompt = function(Prompt)
 		return
 	end
 
+	local IsStorageBox = Prompt.ObjectText == "Storage Box"
+		or (Prompt.Parent and (Prompt.Parent.Name == "ArchivesStorageBox" or Prompt.Parent.Name:find("StorageBox")))
+		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name == "ArchivesStorageBox" or Prompt.Parent.Parent.Name:find("StorageBox")))
+	if IsStorageBox and (Options.AutoInteractIgnoreList.Value["Storage Boxes"] ~= false) then
+		return
+	end
+
+	local IsTurnstyle = Prompt.ObjectText == "Turnstyle"
+		or (Prompt.Parent and Prompt.Parent.Name == "OneWayTwoHandDoor")
+		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name == "OneWayTwoHandDoor")
+
+	local IsPackageDeposit = Prompt.ObjectText == "Deposit"
+		or Prompt.ActionText == "StorageAdd"
+		or (Prompt.Parent and (Prompt.Parent.Name == "ArchivesPackageDeposit" or Prompt.Parent.Name:find("PackageDeposit")))
+		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name == "ArchivesPackageDeposit" or Prompt.Parent.Parent.Name:find("PackageDeposit")))
+
 	local IsJunk = Options.AutoInteractIgnoreList.Value["Junk"]
 
 	local IsSeatPrompt = Prompt.Name == "SeatPrompt" or Prompt.ActionText == "Seat" or (Prompt.Parent and (Prompt.Parent:IsA("Seat") or Prompt.Parent:IsA("VehicleSeat") or Prompt.Parent.Name == "SeatPart"))
@@ -4660,8 +4737,12 @@ Functions.TriggerPrompt = function(Prompt)
 	local IsTerminal = Prompt.ObjectText == "Anchor"
 		or (Prompt.Parent and Prompt.Parent.Name == "ArchivesTerminal")
 		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name == "ArchivesTerminal")
-	if IsTerminal and IsJunk then
-		return
+	if IsTerminal then
+		if Toggles.AutoChaseTerminals and Toggles.AutoChaseTerminals.Value then
+			-- Allowed during chase
+		elseif IsJunk then
+			return
+		end
 	end
 
 	local IsTrashcan = Prompt.Name == "TrashcanPrompt"
@@ -4690,7 +4771,7 @@ Functions.TriggerPrompt = function(Prompt)
 
 	local IsHidePrompt = Prompt.Name == "HidePrompt"
 		or Prompt.ActionText == "Hide"
-		or Prompt.ActionText == "Enter"
+		or (Prompt.ActionText == "Enter" and not IsTurnstyle)
 		or (Prompt.ObjectText and Prompt.ObjectText:find("Bed"))
 
 	local ModelAncestor = Prompt:FindFirstAncestorOfClass("Model")
@@ -4716,7 +4797,10 @@ Functions.TriggerPrompt = function(Prompt)
 		if OpenedLootWardrobes[Prompt] then
 			return
 		end
-	elseif AutoInteractBlacklist[Prompt.Name] then
+	elseif AutoInteractBlacklist[Prompt.Name]
+		and not (IsTurnstyle and Toggles.AutoTurnstyles and Toggles.AutoTurnstyles.Value)
+		and not (IsPackageDeposit and Toggles.AutoPackageDeposit and Toggles.AutoPackageDeposit.Value)
+	then
 		return
 	end
 
@@ -4821,7 +4905,15 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 			else
 				Distance = LocalPlayer:DistanceFromCharacter(Prompt.Parent:GetPivot().Position)
 			end
-			if Distance <= Prompt.MaxActivationDistance and Prompt.Enabled or Distance <= Prompt.MaxActivationDistance and Prompt.Name == "LongPushPrompt" or Distance <= Prompt.MaxActivationDistance and Prompt.Name == "BigPropPrompt" then
+			local isTurnstyle = Prompt.ObjectText == "Turnstyle" or (Prompt.Parent and Prompt.Parent.Name == "OneWayTwoHandDoor")
+			local isDeposit = Prompt.ObjectText == "Deposit" or Prompt.ActionText == "StorageAdd" or (Prompt.Parent and Prompt.Parent.Name == "ArchivesPackageDeposit")
+			local maxDist = Prompt.MaxActivationDistance
+			if isTurnstyle and Toggles.AutoTurnstyles and Toggles.AutoTurnstyles.Value then
+				maxDist = math.max(maxDist, 12)
+			elseif isDeposit and Toggles.AutoPackageDeposit and Toggles.AutoPackageDeposit.Value then
+				maxDist = math.max(maxDist, 10)
+			end
+			if (Distance <= maxDist and Prompt.Enabled) or (Distance <= Prompt.MaxActivationDistance and Prompt.Name == "LongPushPrompt") or (Distance <= Prompt.MaxActivationDistance and Prompt.Name == "BigPropPrompt") then
 				task.spawn(Functions.TriggerPrompt, Prompt)
 			end
 		end
