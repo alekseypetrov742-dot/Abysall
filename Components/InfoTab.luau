@@ -1,5 +1,10 @@
 return function(Window)
     local LatestChangelog = {
+        "14/9/2026 (Update 4)",
+        "<font color='rgb(0, 255, 0)'>+ Completely blocked Forget-Me-Not flower doors from Auto Interact (no more bite damage)</font>",
+        "<font color='rgb(0, 255, 0)'>+ Improved Electrified Water Bypass with collision pads (0 damage from CurrentsPuddle)</font>",
+        "<font color='rgb(0, 255, 0)'>+ Improved Drone Stampede Bypass with hitbox evasion, trample suppression & knockback immunity</font>",
+        "<font color='rgb(0, 255, 0)'>+ Fixed Position Spoof: entity-aware spoofing so jumping, crouching & closets work smoothly</font>",
         "14/9/2026 (Update 3)",
         "<font color='rgb(0, 255, 0)'>+ Correct Room status & [CORRECT] tag now only show in minigames / fake door rooms</font>",
         "<font color='rgb(0, 255, 0)'>+ Fixed Auto Interact to open ALL lockers, multi-door wardrobes, cabinets, desks & drawers</font>",

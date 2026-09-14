@@ -807,6 +807,42 @@ Functions.GetNearestFigure = function()
 	return Nearest.Object
 end
 
+Functions.GetNearestDrone = function()
+	local Nearest = { Distance = math.huge, Object = nil }
+	local myChar = LocalPlayer.Character
+	local myPos = myChar and myChar.PrimaryPart and myChar.PrimaryPart.Position
+	if not myPos then return nil end
+
+	for _, Object in Objects.Drones do
+		if Object and Object.Parent then
+			local Pos = Object:IsA("BasePart") and Object.Position or (Object:IsA("Model") and (Object.PrimaryPart and Object.PrimaryPart.Position or Object:GetPivot().Position))
+			if Pos then
+				local Distance = (Pos - myPos).Magnitude
+				if Distance < 30 and Distance < Nearest.Distance then
+					Nearest.Distance = Distance
+					Nearest.Object = Object
+				end
+			end
+		end
+	end
+
+	local DronesFolder = Services.Workspace:FindFirstChild("Drones")
+	if DronesFolder then
+		for _, Object in DronesFolder:GetChildren() do
+			local Pos = Object:IsA("BasePart") and Object.Position or (Object:IsA("Model") and (Object.PrimaryPart and Object.PrimaryPart.Position or Object:GetPivot().Position))
+			if Pos then
+				local Distance = (Pos - myPos).Magnitude
+				if Distance < 30 and Distance < Nearest.Distance then
+					Nearest.Distance = Distance
+					Nearest.Object = Object
+				end
+			end
+		end
+	end
+
+	return Nearest.Object
+end
+
 Functions.GetNearestHidingSpot = function()
 	local Nearest = { Distance = math.huge, Object = nil }
 	local LastHideSpot = Character:FindFirstChild("LastHideSpot")
@@ -1460,20 +1496,62 @@ Toggles.BypassDrones:OnChanged(function(Value)
 			end
 		end
 	end
+	local DronesFolder = Services.Workspace:FindFirstChild("Drones")
+	if DronesFolder then
+		for _, desc in DronesFolder:GetDescendants() do
+			if desc:IsA("BasePart") then
+				desc.CanCollide = not Value
+				desc.CanTouch = not Value
+			end
+		end
+	end
+	if Value and Character then
+		if Character:GetAttribute("Animating") == true and not Globals.Sliding then Character:SetAttribute("Animating", false) end
+		if Character:GetAttribute("RestrictMovement") == true then Character:SetAttribute("RestrictMovement", false) end
+		local HRP = Character:FindFirstChild("HumanoidRootPart")
+		local kb = HRP and HRP:FindFirstChild("KnockbackVelo")
+		if kb then kb:Destroy() end
+	end
 end)
+
+local ElectricWaterPads = {}
+
+local function UpdateElectricPuddle(Puddle, Value)
+	if not Puddle or not Puddle.Parent then return end
+	if Puddle:IsA("BasePart") then
+		Puddle.CanTouch = not Value
+		Puddle.CanCollide = not Value
+		if Value then
+			if not ElectricWaterPads[Puddle] or not ElectricWaterPads[Puddle].Parent then
+				local Pad = Instance.new("Part")
+				Pad.Name = "AbysallElectricWaterPad"
+				Pad.Anchored = true
+				Pad.CanCollide = true
+				Pad.CanTouch = false
+				Pad.Transparency = 1
+				Pad.CFrame = Puddle.CFrame + Vector3.new(0, 0.4, 0)
+				Pad.Size = Vector3.new(Puddle.Size.X + 0.5, 0.15, Puddle.Size.Z + 0.5)
+				Pad.Parent = Puddle
+				ElectricWaterPads[Puddle] = Pad
+			end
+		else
+			if ElectricWaterPads[Puddle] then
+				ElectricWaterPads[Puddle]:Destroy()
+				ElectricWaterPads[Puddle] = nil
+			end
+		end
+	end
+	for _, desc in Puddle:GetDescendants() do
+		if desc:IsA("BasePart") and desc.Name ~= "AbysallElectricWaterPad" then
+			desc.CanTouch = not Value
+			desc.CanCollide = not Value
+		end
+	end
+end
 
 Toggles.BypassElectricWater:OnChanged(function(Value)
 	for _, Object in Objects.ElectricWater do
-		if Object and Object.Parent then
-			if Object:IsA("BasePart") then
-				Object.CanTouch = not Value
-			end
-			for _, desc in Object:GetDescendants() do
-				if desc:IsA("BasePart") then
-					desc.CanTouch = not Value
-				end
-			end
-		end
+		UpdateElectricPuddle(Object, Value)
 	end
 end)
 
@@ -1525,6 +1603,21 @@ Groupboxes.Exploits_BypassRight:AddToggle("CrouchSpoof", {
 	Text = "Crouch Spoof", Default = false, Tooltip = "Makes the game think you are always crouching."
 })
 Toggles.PositionSpoof:OnChanged(function(Value)
+	if not Value then
+		Globals.SpoofOffset = 0
+		if Collision then
+			Collision.CanTouch = true
+			Collision.Position = RootPart.Position + Vector3.new(0, 0.18, 0)
+		end
+		if CollisionPart then
+			CollisionPart.CanTouch = true
+			CollisionPart.Position = RootPart.Position + Vector3.new(0, 0.18, 0)
+		end
+		if Collision and Collision:FindFirstChild("CollisionCrouch") then
+			Collision.CollisionCrouch.CanTouch = true
+			Collision.CollisionCrouch.Position = RootPart.Position + Vector3.new(0, -0.982, 0)
+		end
+	end
 	if Humanoid and Humanoid.HipHeight < 1 then
 		Humanoid.HipHeight = 2.396
 	end
@@ -1532,7 +1625,7 @@ Toggles.PositionSpoof:OnChanged(function(Value)
 		Character.LowerTorso.Root.C1 = Globals.OriginalC1
 	end
 	if RemotesFolder:FindFirstChild("Crouch") then
-		RemotesFolder.Crouch:FireServer(Value and true or Functions.IsCrouching(), true)
+		RemotesFolder.Crouch:FireServer(Functions.IsCrouching(), true)
 	end
 end)
 Toggles.PositionSpoof:AddKeyPicker("PositionSpoof", {
@@ -2811,7 +2904,7 @@ if Functions.CheckCompatability({"hookmetamethod", "newcclosure", "getnamecallme
 			local Method = Abysall.Environment.getnamecallmethod()
 
 			if Self.Name == "Crouch" and Method == "FireServer" then
-				if Toggles.CrouchSpoof.Value or Toggles.PositionSpoof.Value then
+				if Toggles.CrouchSpoof.Value or (Toggles.PositionSpoof.Value and Globals.SpoofOffset == 200) then
 					Args[1] = true
 					Args[2] = true
 				end
@@ -2821,7 +2914,7 @@ if Functions.CheckCompatability({"hookmetamethod", "newcclosure", "getnamecallme
 				return
 			end
 
-			if (Self.Name == "WalkedInto" or Self.Name == "ShoulderChecked" or Self.Name:find("Drone") or Self.Name:find("Stampede") or Self.Name == "Trample" or Self.Name == "Stomp" or Self.Name == "Knockback" or Self.Name == "Push") and Method == "FireServer" and Toggles.BypassDrones and Toggles.BypassDrones.Value then
+			if (Self.Name == "WalkedInto" or Self.Name == "ShoulderChecked" or Self.Name:find("Drone") or Self.Name:find("Stampede") or Self.Name == "Trample" or Self.Name == "Trampled" or Self.Name == "Stomp" or Self.Name == "Knockback" or Self.Name == "Push") and Method == "FireServer" and Toggles.BypassDrones and Toggles.BypassDrones.Value then
 				return
 			end
 
@@ -3311,10 +3404,6 @@ Functions.HandleCharacter = function(NewCharacter)
 			end
 		end
 
-		if (Toggles.CrouchSpoof.Value or Toggles.PositionSpoof.Value) and RemotesFolder:FindFirstChild("Crouch") then
-			RemotesFolder.Crouch:FireServer(true, true)
-		end
-
 		if Floor ~= "Fools" and Floor ~= "OldHotel" and not Camera:FindFirstChild("MinecartRig") then
 			RootPart.CanCollide = false
 		end
@@ -3327,8 +3416,13 @@ Functions.HandleCharacter = function(NewCharacter)
 			Services.SoundService:WaitForChild("Main").Volume = 1
 		end
 
+		local NearEntity = Functions.GetNearestEntity()
+		local NearFigure = Toggles.FigureGodmode.Value and Functions.GetNearestFigure()
+		local NearDrone = (Toggles.BypassDrones and Toggles.BypassDrones.Value and Functions.GetNearestDrone and Functions.GetNearestDrone())
+		local HasDanger = (NearEntity ~= nil) or (NearFigure ~= nil) or (NearDrone ~= nil)
+
 		if Floor == "OldHotel" or Floor == "Fools" then
-			local SpoofOffset = Toggles.PositionSpoof.Value and Functions.GetNearestEntity() and 200 or Toggles.FigureGodmode.Value and Functions.GetNearestFigure() and 200 or 0
+			local SpoofOffset = (Toggles.PositionSpoof.Value and NearEntity and 200) or (NearFigure and 200) or 0
 			Globals.SpoofOffset = SpoofOffset
 			Collision.Position = RootPart.Position + Vector3.new(0, SpoofOffset, 0)
 			Collision.CanCollide = false
@@ -3353,16 +3447,18 @@ Functions.HandleCharacter = function(NewCharacter)
 				Character.LowerTorso.Root.C1 = Globals.OriginalC1
 			end
 
-			local SpoofOffset = Toggles.PositionSpoof.Value and 200 or 0
+			local SpoofOffset = (Toggles.PositionSpoof.Value and HasDanger) and 200 or 0
+			Globals.SpoofOffset = SpoofOffset
+
 			Collision.Position     = RootPart.Position + Vector3.new(0, 0.18 + SpoofOffset, 0)
 			CollisionPart.Position = RootPart.Position + Vector3.new(0, 0.18 + SpoofOffset, 0)
-			Collision.CanTouch = not Toggles.PositionSpoof.Value
-			CollisionPart.CanTouch = not Toggles.PositionSpoof.Value
+			Collision.CanTouch = (SpoofOffset == 0)
+			CollisionPart.CanTouch = (SpoofOffset == 0)
 
 			if Collision:FindFirstChild("CollisionCrouch") and CollisionClone:FindFirstChild("CollisionCrouch") then
 				local CrouchY = -0.982
 				Collision.CollisionCrouch.Position = RootPart.Position + Vector3.new(0, CrouchY + SpoofOffset, 0)
-				Collision.CollisionCrouch.CanTouch = not Toggles.PositionSpoof.Value
+				Collision.CollisionCrouch.CanTouch = (SpoofOffset == 0)
 				CollisionClone.CollisionCrouch.CollisionGroup = Collision.CollisionCrouch.CollisionGroup
 			end
 			if CollisionClone:FindFirstChild("CollisionCrouch") then
@@ -3372,6 +3468,18 @@ Functions.HandleCharacter = function(NewCharacter)
 
 		CollisionClone.CollisionGroup = Collision.CollisionGroup
 		CollisionClone.Position = RootPart.Position + Vector3.new(0, 0.18, 0)
+
+		if Toggles.BypassDrones and Toggles.BypassDrones.Value and Character then
+			if Character:GetAttribute("Animating") == true and not Globals.Sliding then
+				Character:SetAttribute("Animating", false)
+			end
+			if Character:GetAttribute("RestrictMovement") == true then
+				Character:SetAttribute("RestrictMovement", false)
+			end
+			local HRP = Character:FindFirstChild("HumanoidRootPart")
+			local kb = HRP and HRP:FindFirstChild("KnockbackVelo")
+			if kb then kb:Destroy() end
+		end
 
 		if Toggles.VelocityManipulationToggle.Value and Options.VelocityManipulationMode.Value == "Velocity" then
 			Globals.ManipulateBody.Parent = RootPart
@@ -3400,7 +3508,8 @@ Functions.HandleCharacter = function(NewCharacter)
 			end
 		end
 
-		if (Toggles.CrouchSpoof.Value or Toggles.PositionSpoof.Value) and RemotesFolder:FindFirstChild("Crouch") and tick() - Globals.LastCrouchFire > 0.1 then
+		local ShouldSpoofCrouch = Toggles.CrouchSpoof.Value or (Toggles.PositionSpoof.Value and Globals.SpoofOffset == 200)
+		if ShouldSpoofCrouch and RemotesFolder:FindFirstChild("Crouch") and tick() - Globals.LastCrouchFire > 0.1 then
 			RemotesFolder.Crouch:FireServer(true, true)
 			Globals.LastCrouchFire = tick()
 		end
@@ -3947,21 +4056,16 @@ Functions.HandleObject = function(Object)
 	elseif Name == "ElectricWater" or Name == "ElectrifiedWater" or Name == "ElectricPuddle" or Name == "WaterHazard"
 		or (Name:find("Puddle") and not Name:find("Blood"))
 		or (Name:find("Electric") and not (Name:find("Key") or Name:find("Breaker") or Name:find("Elevator")))
-		or (Name:find("Shock") and not Name:find("Shop")) then
+		or (Name:find("Shock") and not Name:find("Shop"))
+		or Object:HasTag("CurrentsPuddle") then
 		table.insert(Objects.ElectricWater, Object)
 		if Toggles.BypassElectricWater and Toggles.BypassElectricWater.Value then
-			if Object:IsA("BasePart") then
-				Object.CanTouch = false
-			end
-			for _, desc in Object:GetDescendants() do
-				if desc:IsA("BasePart") then
-					desc.CanTouch = false
-				end
-			end
+			UpdateElectricPuddle(Object, true)
 		end
 		Object.DescendantAdded:Connect(function(desc)
-			if Toggles.BypassElectricWater and Toggles.BypassElectricWater.Value and desc:IsA("BasePart") then
+			if Toggles.BypassElectricWater and Toggles.BypassElectricWater.Value and desc:IsA("BasePart") and desc.Name ~= "AbysallElectricWaterPad" then
 				desc.CanTouch = false
+				desc.CanCollide = false
 			end
 		end)
 	elseif Name == "WaterCup" and Object:FindFirstChild("ModulePrompt") then
@@ -4357,13 +4461,14 @@ local AllowedInstances = {
 	ArchivesWaterCooler=true, Drones=true, ArchivesOfficeChair=true, ArchivesTrashcan=true,
 	ArchivesTerminal=true, ArchivesFihTank=true, ArchivesLargePrinter=true,
 	Drone=true, DroneStampede=true, Stampede=true, RushHour=true, RunningDrone=true, Runner=true,
-	ElectricWater=true, ElectrifiedWater=true, ElectricPuddle=true, WaterHazard=true, Puddle=true, Puddles=true
+	ElectricWater=true, ElectrifiedWater=true, ElectricPuddle=true, WaterHazard=true, Puddle=true, Puddles=true,
+	CurrentsPuddle=true, Pool1=true, Pool2=true, Pool3=true, Pool4=true, Pool5=true, Pool6=true, Pool7=true, Pool8=true
 }
 
 Functions.QueueObject = function(Object)
 	local Name = Object.Name
 	local isDrone = Name == "Drones" or Name == "Drone" or Name:find("Drone") or Name:find("Stampede") or Name == "RushHour" or Name == "RunningDrone" or Name == "Runner"
-	local isElectric = Name:find("Electric") or Name:find("Shock") or Name:find("Puddle") or (Name:find("Water") and not (Name:find("Cup") or Name:find("Pump") or Name:find("Cooler")))
+	local isElectric = Name:find("Electric") or Name:find("Shock") or Name:find("Puddle") or (Name:find("Water") and not (Name:find("Cup") or Name:find("Pump") or Name:find("Cooler"))) or Object:HasTag("CurrentsPuddle")
 	if not AllowedInstances[Name] and not isDrone and not isElectric and Object.ClassName ~= "ProximityPrompt" and Object.Parent ~= CurrentRooms and not ItemNames[Name] then
 		return
 	end
@@ -4512,7 +4617,7 @@ end
 local AutoInteractBlacklist = {
 	HidePrompt=true, RiftPrompt=true, StarRiftPrompt=true, InteractPrompt=true, ClimbPrompt=true,
 	DonatePrompt=true, DialoguePrompt=true, RevivePrompt=true, EnterPrompt=true, AnimatePrompt=true,
-	ToolEventPrompt=true, Prompt=true, PropPrompt=true
+	ToolEventPrompt=true, Prompt=true, PropPrompt=true, ManualOpenPrompt=true
 }
 
 local OpenedLootWardrobes = {}
@@ -4521,6 +4626,16 @@ local TriggerDebounce = false
 Functions.TriggerPrompt = function(Prompt)
 	if not Prompt or not Prompt.Parent then return end
 	if TriggerDebounce then return end
+
+	if Prompt.Name == "ManualOpenPrompt"
+		or (Prompt.Parent and (Prompt.Parent.Name == "DespawningDoor" or Prompt.Parent.Name:find("LeafWall") or Prompt.Parent.Name:find("Leafwall") or Prompt.Parent.Name:find("FlowerDoor")))
+		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name == "DespawningDoor" or Prompt.Parent.Parent.Name:find("LeafWall")))
+		or Prompt:FindFirstAncestor("DespawningDoor")
+		or Prompt:FindFirstAncestor("LeafWall")
+		or Prompt:FindFirstAncestor("Leafwall")
+	then
+		return
+	end
 
 	local IsJunk = Options.AutoInteractIgnoreList.Value["Junk"]
 
