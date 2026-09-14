@@ -1,5 +1,9 @@
 return function(Window)
     local LatestChangelog = {
+        "14/9/2026",
+        "<font color='rgb(0, 255, 0)'>+ Added Water Cup ESP (Good/Bad/Terrible tiers)</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Locker Auto-Loot & Seat Ignoring for Auto Interact</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added New Items to ESP (Pizza, PaperPlane, FihFlakes, WaterCup, PocketMirror)</font>",
         "11/7/2026",
         "<font color='rgb(0, 255, 0)'>+ Added Entity ESP Selection</font>",
 		"<font color='rgb(0, 255, 0)'>+ Added Item Notifier</font>",

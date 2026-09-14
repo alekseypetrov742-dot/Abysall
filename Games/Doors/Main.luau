@@ -37,6 +37,7 @@ local Objects = {
 	Entities = {},
 	SeekObstructions = {},
 	Items = {},
+	WaterCups = {},
 	Chests = {},
 	Currency = {},
 	Ladders = {},
@@ -209,7 +210,12 @@ local ItemNames = {
 	["AloeVera"]          = "Aloe Vera",
 	["Donut"]             = "Donut",
 	["Lotus"]             = "Lotus",
-	["BoxingGloves"]      = "Boxing Gloves"
+	["BoxingGloves"]      = "Boxing Gloves",
+	["Pizza"]             = "Pizza",
+	["PaperPlane"]        = "Paper Airplane",
+	["FihFlakes"]         = "Fish Flakes",
+	["WaterCup"]          = "Water Cup",
+	["PocketMirror"]      = "Pocket Mirror"
 }
 
 local CutsceneNames = {
@@ -1198,9 +1204,15 @@ Toggles.AutoInteractToggle:AddKeyPicker("AutoInteractKeybind", {
 })
 Groupboxes.Self_Automation:AddDropdown("AutoInteractIgnoreList", {
 	Text = "Ignore List",
-	Values = { "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks" },
-	Default = { "Glitch Fragments", "Jeff Items", "Dropped Items" },
+	Values = { "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks", "Seats / Chairs", "Lockers" },
+	Default = { "Glitch Fragments", "Jeff Items", "Dropped Items", "Seats / Chairs" },
 	Multi = true, AllowNull = true
+})
+Groupboxes.Self_Automation:AddToggle("AutoInteractIgnoreSeats", {
+	Text = "Ignore Seats", Default = true, Tooltip = "Prevents Auto Interact from sitting on chairs and benches."
+})
+Groupboxes.Self_Automation:AddToggle("AutoInteractLockers", {
+	Text = "Loot Lockers", Default = true, Tooltip = "Automatically loots unbroken lockers and wardrobes."
 })
 Groupboxes.Self_Automation:AddDivider()
 Groupboxes.Self_Automation:AddToggle("AutoClosetToggle", {
@@ -1826,6 +1838,14 @@ Groupboxes.Visuals_ESP_Toggles:AddToggle("HidingSpotESPToggle", { Text = "Hiding
 Groupboxes.Visuals_ESP_Toggles:AddToggle("PlayerESPToggle",     { Text = "Players",      Default = false, Tooltip = "Highlights other players." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("ChestESPToggle",      { Text = "Chests",       Default = false, Tooltip = "Highlights objects that can contain loot." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("ItemESPToggle",       { Text = "Items",        Default = false, Tooltip = "Highlights all collectable items/consumables." })
+Groupboxes.Visuals_ESP_Toggles:AddDropdown("WaterCupESPOptions", {
+	Text = "Water Cup Types",
+	Values = { "Good", "Bad", "Terrible" },
+	Default = { "Good", "Bad", "Terrible" },
+	Multi = true,
+	AllowNull = true
+})
+Groupboxes.Visuals_ESP_Toggles:AddToggle("WaterCupESPToggle",   { Text = "Water Cups",   Default = false, Tooltip = "Highlights water cups by tier: Good (Lukewarm), Bad (Cold/Hot), Terrible (Goo)." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("CurrencyESPToggle",   { Text = "Currency",     Default = false, Tooltip = "Highlights all currency that spawns." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("LadderESPToggle",     { Text = "Ladders",      Default = false, Tooltip = "Highlights ladders that can be used to disable the anticheat." })
 Groupboxes.Visuals_ESP_Toggles:AddDivider()
@@ -1842,6 +1862,9 @@ Toggles.HidingSpotESPToggle:AddColorPicker("HidingSpotESPColor", { Text = "Hidin
 Toggles.PlayerESPToggle:AddColorPicker("PlayerESPColor",       { Text = "Players",      Default = Color3.fromRGB(255, 255, 255), Transparency = 0 })
 Toggles.ChestESPToggle:AddColorPicker("ChestESPColor",         { Text = "Chests",       Default = Color3.fromRGB(255, 255, 0),   Transparency = 0 })
 Toggles.ItemESPToggle:AddColorPicker("ItemESPColor",           { Text = "Items",        Default = Color3.fromRGB(170, 0, 255),   Transparency = 0 })
+Toggles.WaterCupESPToggle:AddColorPicker("GoodCupESPColor",     { Text = "Good Cup",     Default = Color3.fromRGB(0, 255, 0),     Transparency = 0 })
+Toggles.WaterCupESPToggle:AddColorPicker("BadCupESPColor",      { Text = "Bad Cup",      Default = Color3.fromRGB(255, 0, 0),     Transparency = 0 })
+Toggles.WaterCupESPToggle:AddColorPicker("TerribleCupESPColor", { Text = "Terrible Cup", Default = Color3.fromRGB(170, 0, 255), Transparency = 0 })
 Toggles.CurrencyESPToggle:AddColorPicker("CurrencyESPColor",   { Text = "Currency",     Default = Color3.fromRGB(255, 255, 0),   Transparency = 0 })
 Toggles.LadderESPToggle:AddColorPicker("LadderESPColor",       { Text = "Ladders",      Default = Color3.fromRGB(255, 255, 255), Transparency = 0 })
 Toggles.EntityESPToggle:AddColorPicker("EntityESPColor",       { Text = "Entities",     Default = Color3.fromRGB(255, 0, 0),     Transparency = 0 })
@@ -1931,9 +1954,84 @@ Options.ChestESPColor:OnChanged(function(Value)
 	for _, Object in Objects.Chests do Abysall.ESPLibrary:UpdateObjectColor(Object, Value) end
 end)
 
+local function GetWaterCupTier(Object)
+	local CupType = Object:GetAttribute("Tool_Type")
+		or Object:GetAttribute("Type")
+		or (Object:FindFirstChild("Handle") and Object.Handle:GetAttribute("Type"))
+		or "Water"
+
+	local lowerType = string.lower(tostring(CupType))
+	if string.find(lowerType, "lukewarm") or string.find(lowerType, "warm") then
+		return "Good", CupType, (Options.GoodCupESPColor and Options.GoodCupESPColor.Value or Color3.fromRGB(0, 255, 0))
+	elseif string.find(lowerType, "goo") or string.find(lowerType, "purple") or string.find(lowerType, "violet") then
+		return "Terrible", CupType, (Options.TerribleCupESPColor and Options.TerribleCupESPColor.Value or Color3.fromRGB(170, 0, 255))
+	elseif string.find(lowerType, "cold") or string.find(lowerType, "hot") then
+		return "Bad", CupType, (Options.BadCupESPColor and Options.BadCupESPColor.Value or Color3.fromRGB(255, 0, 0))
+	else
+		return "Bad", CupType, (Options.BadCupESPColor and Options.BadCupESPColor.Value or Color3.fromRGB(255, 0, 0))
+	end
+end
+
+local function UpdateWaterCupESP(Object)
+	if not Object or not Object.Parent then return end
+	if Toggles.WaterCupESPToggle.Value then
+		local Tier, CupType, Color = GetWaterCupTier(Object)
+		if Options.WaterCupESPOptions.Value[Tier] then
+			Functions.AddESP({ Object = Object, Text = Tier .. " Cup [" .. CupType .. "]", Color = Color }, Object:GetAttribute("ParentRoom") ~= nil)
+		else
+			Functions.RemoveESP(Object)
+		end
+	elseif Toggles.ItemESPToggle.Value then
+		Functions.AddESP({ Object = Object, Text = "Water Cup", Color = Options.ItemESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil)
+	else
+		Functions.RemoveESP(Object)
+	end
+end
+
+Toggles.WaterCupESPToggle:OnChanged(function()
+	for _, Object in Objects.WaterCups do
+		UpdateWaterCupESP(Object)
+	end
+end)
+
+Options.WaterCupESPOptions:OnChanged(function()
+	for _, Object in Objects.WaterCups do
+		UpdateWaterCupESP(Object)
+	end
+end)
+
+Options.GoodCupESPColor:OnChanged(function(Value)
+	for _, Object in Objects.WaterCups do
+		local Tier = GetWaterCupTier(Object)
+		if Tier == "Good" and Toggles.WaterCupESPToggle.Value then
+			Abysall.ESPLibrary:UpdateObjectColor(Object, Value)
+		end
+	end
+end)
+
+Options.BadCupESPColor:OnChanged(function(Value)
+	for _, Object in Objects.WaterCups do
+		local Tier = GetWaterCupTier(Object)
+		if Tier == "Bad" and Toggles.WaterCupESPToggle.Value then
+			Abysall.ESPLibrary:UpdateObjectColor(Object, Value)
+		end
+	end
+end)
+
+Options.TerribleCupESPColor:OnChanged(function(Value)
+	for _, Object in Objects.WaterCups do
+		local Tier = GetWaterCupTier(Object)
+		if Tier == "Terrible" and Toggles.WaterCupESPToggle.Value then
+			Abysall.ESPLibrary:UpdateObjectColor(Object, Value)
+		end
+	end
+end)
+
 Toggles.ItemESPToggle:OnChanged(function(Value)
 	for _, Object in Objects.Items do
-		if Value then
+		if Object.Name == "WaterCup" and Toggles.WaterCupESPToggle.Value then
+			UpdateWaterCupESP(Object)
+		elseif Value then
 			local Label = ItemNames[Object.Name] or (Object.Name == "Green_Herb" and "Green Herb")
 			if Label then
 				Functions.AddESP({ Object = Object, Text = Label, Color = Options.ItemESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil)
@@ -1944,7 +2042,11 @@ Toggles.ItemESPToggle:OnChanged(function(Value)
 	end
 end)
 Options.ItemESPColor:OnChanged(function(Value)
-	for _, Object in Objects.Items do Abysall.ESPLibrary:UpdateObjectColor(Object, Value) end
+	for _, Object in Objects.Items do
+		if not (Object.Name == "WaterCup" and Toggles.WaterCupESPToggle.Value) then
+			Abysall.ESPLibrary:UpdateObjectColor(Object, Value)
+		end
+	end
 end)
 
 Toggles.CurrencyESPToggle:OnChanged(function(Value)
@@ -3638,6 +3740,18 @@ Functions.HandleObject = function(Object)
 	elseif Name == "MouseHole" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Mouse", Color = Options.ChestESPColor.Value }, true) end
 		table.insert(Objects.Chests, Object)
+	elseif Name == "WaterCup" and Object:FindFirstChild("ModulePrompt") then
+		table.insert(Objects.WaterCups, Object)
+		table.insert(Objects.Items, Object)
+		UpdateWaterCupESP(Object)
+
+		if Toggles.NotifyItemsToggle.Value and Options.NotifyItemList.Value["Water Cup"] and Object.Parent.Name ~= "Drops" then
+			if Toggles.NotifyItemsShowDistance.Value then
+				Functions.Notify({ Title = "Item 'Water Cup' has spawned.", Body = "It is '" .. math.round(LocalPlayer:DistanceFromCharacter(Object.PrimaryPart.Position)) .. "' studs away from you." })
+			else
+				Functions.Notify({ Title = "Item 'Water Cup' has spawned." })
+			end
+		end
 	elseif ItemNames[Name] and Object:FindFirstChild("ModulePrompt") then
 		if Toggles.ItemESPToggle.Value then Functions.AddESP({ Object = Object, Text = ItemNames[Name], Color = Options.ItemESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil) end
 		if Name == "LotusHolder" or Name == "LotusPetalPickup" then
@@ -4155,9 +4269,27 @@ local AutoInteractBlacklist = {
 local TriggerDebounce = false
 
 Functions.TriggerPrompt = function(Prompt)
-	if AutoInteractBlacklist[Prompt.Name] then return end
 	if not Prompt or not Prompt.Parent then return end
 	if TriggerDebounce then return end
+
+	local IsSeatPrompt = Prompt.Name == "SeatPrompt" or Prompt.ActionText == "Seat" or (Prompt.Parent and (Prompt.Parent:IsA("Seat") or Prompt.Parent:IsA("VehicleSeat") or Prompt.Parent.Name == "SeatPart"))
+	if IsSeatPrompt then
+		if Toggles.AutoInteractIgnoreSeats.Value or Options.AutoInteractIgnoreList.Value["Seats / Chairs"] then
+			return
+		end
+	end
+
+	local IsLockerLoot = (Prompt.ActionText == "Loot" or Prompt.ObjectText == "Wardrobe" or Prompt.ObjectText == "Locker")
+		and not Prompt.Parent.Name:find("Broken")
+		and not (Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Broken"))
+
+	if IsLockerLoot then
+		if not Toggles.AutoInteractLockers.Value or Options.AutoInteractIgnoreList.Value["Lockers"] then
+			return
+		end
+	elseif AutoInteractBlacklist[Prompt.Name] then
+		return
+	end
 
 	local ParentItem = Functions.HasItem(Prompt.Parent.Name)
 	if ParentItem and ParentItem:GetAttribute("Durability") and ParentItem:GetAttribute("DurabilityMax")
