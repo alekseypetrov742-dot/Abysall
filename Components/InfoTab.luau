@@ -1,6 +1,10 @@
 return function(Window)
     local LatestChangelog = {
         "14/9/2026",
+        "<font color='rgb(0, 255, 0)'>+ Added Bypass Drones (Immunity & Noclip against Drones)</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Water Cooler ESP & Spawn Notifier</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Disable Push Chairs Toggle</font>",
+        "<font color='rgb(0, 255, 0)'>+ Added Auto Interact Filters (Terminals, Trashcans, Printers, Fish Tank, Lockers Once)</font>",
         "<font color='rgb(0, 255, 0)'>+ Added Water Cup ESP (Good/Bad/Terrible tiers)</font>",
         "<font color='rgb(0, 255, 0)'>+ Added Locker Auto-Loot & Seat Ignoring for Auto Interact</font>",
         "<font color='rgb(0, 255, 0)'>+ Added New Items to ESP (Pizza, PaperPlane, FihFlakes, WaterCup, PocketMirror)</font>",

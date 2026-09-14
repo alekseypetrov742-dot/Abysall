@@ -38,6 +38,9 @@ local Objects = {
 	SeekObstructions = {},
 	Items = {},
 	WaterCups = {},
+	Coolers = {},
+	Drones = {},
+	Chairs = {},
 	Chests = {},
 	Currency = {},
 	Ladders = {},
@@ -1204,15 +1207,18 @@ Toggles.AutoInteractToggle:AddKeyPicker("AutoInteractKeybind", {
 })
 Groupboxes.Self_Automation:AddDropdown("AutoInteractIgnoreList", {
 	Text = "Ignore List",
-	Values = { "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks", "Seats / Chairs", "Lockers" },
-	Default = { "Glitch Fragments", "Jeff Items", "Dropped Items", "Seats / Chairs" },
+	Values = { "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks", "Seats / Chairs", "Lockers", "Terminals", "Trashcans", "Fish Tank", "Printers", "Push Prompts" },
+	Default = { "Glitch Fragments", "Jeff Items", "Dropped Items", "Seats / Chairs", "Terminals", "Trashcans", "Fish Tank", "Printers", "Push Prompts" },
 	Multi = true, AllowNull = true
 })
 Groupboxes.Self_Automation:AddToggle("AutoInteractIgnoreSeats", {
 	Text = "Ignore Seats", Default = true, Tooltip = "Prevents Auto Interact from sitting on chairs and benches."
 })
+Groupboxes.Self_Automation:AddToggle("DisablePushChairsToggle", {
+	Text = "Disable Push Chairs", Default = true, Tooltip = "Disables the push prompt on office chairs and prevents pushing them."
+})
 Groupboxes.Self_Automation:AddToggle("AutoInteractLockers", {
-	Text = "Loot Lockers", Default = true, Tooltip = "Automatically loots unbroken lockers and wardrobes."
+	Text = "Loot Lockers", Default = true, Tooltip = "Automatically loots unbroken lockers and wardrobes (coins/loot) once."
 })
 Groupboxes.Self_Automation:AddDivider()
 Groupboxes.Self_Automation:AddToggle("AutoClosetToggle", {
@@ -1284,6 +1290,7 @@ Groupboxes.Exploits_Bypass:AddToggle("BypassSeekingWall",    { Text = "Bypass Se
 Groupboxes.Exploits_Bypass:AddToggle("BypassSnare",          { Text = "Bypass Snare",            Default = false, Tooltip = "Prevents 'Snare' from trapping you." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassBanana",         { Text = "Bypass Banana",           Default = false, Tooltip = "Prevents 'Banana Peel' from slipping you up (sometimes doesn't work)." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassJeff",           { Text = "Bypass Jeff",             Default = false, Tooltip = "Prevents 'Jeff the Killer' from stabbing you (sometimes doesn't work)." })
+Groupboxes.Exploits_Bypass:AddToggle("BypassDrones",         { Text = "Bypass Drones",           Default = false, Tooltip = "Walk through Drones without collision and prevents them from damaging you." })
 
 Toggles.BypassGiggle:OnChanged(function(Value)
 	for _, Object in Objects.Entities do
@@ -1390,6 +1397,16 @@ Toggles.BypassJeff:OnChanged(function(Value)
 				end
 			end
 			Object:WaitForChild("Humanoid").Health = 0
+		end
+	end
+end)
+
+Toggles.BypassDrones:OnChanged(function(Value)
+	for _, Object in Objects.Drones do
+		local Collider = Object:FindFirstChild("PaperCollider")
+		if Collider and Collider:IsA("BasePart") then
+			Collider.CanCollide = not Value
+			Collider.CanTouch = not Value
 		end
 	end
 end)
@@ -1734,6 +1751,7 @@ Groupboxes.Visuals_Entities:AddDropdown("NotifyItemList", {
 })
 Groupboxes.Visuals_Entities:AddToggle("NotifyItemsToggle",    { Text = "Notify Items",    Default = false, Tooltip = "Sends a notification when an item spawns." })
 Groupboxes.Visuals_Entities:AddToggle("NotifyItemsShowDistance",    { Text = "Show Distance",    Default = false, Tooltip = "Shows how far away the item is in the notification." })
+Groupboxes.Visuals_Entities:AddToggle("NotifyCoolersToggle",          { Text = "Notify Water Coolers", Default = false, Tooltip = "Sends a notification when a water cooler spawns." })
 Groupboxes.Visuals_Entities:AddDivider()
 Groupboxes.Visuals_Entities:AddToggle("NotifyLibraryCode", { Text = "Notify Library Code", Default = false, Tooltip = "Automatically solves the code for the library padlock." })
 Groupboxes.Visuals_Entities:AddToggle("NotifyOxygen",      { Text = "Notify Oxygen Level", Default = false, Tooltip = "Shows how much oxygen you have remaining." })
@@ -1846,6 +1864,7 @@ Groupboxes.Visuals_ESP_Toggles:AddDropdown("WaterCupESPOptions", {
 	AllowNull = true
 })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("WaterCupESPToggle",   { Text = "Water Cups",   Default = false, Tooltip = "Highlights water cups by tier: Good (Lukewarm), Bad (Cold/Hot), Terrible (Goo)." })
+Groupboxes.Visuals_ESP_Toggles:AddToggle("CoolerESPToggle",     { Text = "Water Coolers", Default = false, Tooltip = "Highlights water coolers." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("CurrencyESPToggle",   { Text = "Currency",     Default = false, Tooltip = "Highlights all currency that spawns." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("LadderESPToggle",     { Text = "Ladders",      Default = false, Tooltip = "Highlights ladders that can be used to disable the anticheat." })
 Groupboxes.Visuals_ESP_Toggles:AddDivider()
@@ -1865,6 +1884,7 @@ Toggles.ItemESPToggle:AddColorPicker("ItemESPColor",           { Text = "Items",
 Toggles.WaterCupESPToggle:AddColorPicker("GoodCupESPColor",     { Text = "Good Cup",     Default = Color3.fromRGB(0, 255, 0),     Transparency = 0 })
 Toggles.WaterCupESPToggle:AddColorPicker("BadCupESPColor",      { Text = "Bad Cup",      Default = Color3.fromRGB(255, 0, 0),     Transparency = 0 })
 Toggles.WaterCupESPToggle:AddColorPicker("TerribleCupESPColor", { Text = "Terrible Cup", Default = Color3.fromRGB(170, 0, 255), Transparency = 0 })
+Toggles.CoolerESPToggle:AddColorPicker("CoolerESPColor",       { Text = "Water Coolers", Default = Color3.fromRGB(0, 200, 255), Transparency = 0 })
 Toggles.CurrencyESPToggle:AddColorPicker("CurrencyESPColor",   { Text = "Currency",     Default = Color3.fromRGB(255, 255, 0),   Transparency = 0 })
 Toggles.LadderESPToggle:AddColorPicker("LadderESPColor",       { Text = "Ladders",      Default = Color3.fromRGB(255, 255, 255), Transparency = 0 })
 Toggles.EntityESPToggle:AddColorPicker("EntityESPColor",       { Text = "Entities",     Default = Color3.fromRGB(255, 0, 0),     Transparency = 0 })
@@ -2023,6 +2043,32 @@ Options.TerribleCupESPColor:OnChanged(function(Value)
 		local Tier = GetWaterCupTier(Object)
 		if Tier == "Terrible" and Toggles.WaterCupESPToggle.Value then
 			Abysall.ESPLibrary:UpdateObjectColor(Object, Value)
+		end
+	end
+end)
+
+Toggles.CoolerESPToggle:OnChanged(function(Value)
+	for _, Object in Objects.Coolers do
+		if Value then
+			Functions.AddESP({ Object = Object, Text = "Water Cooler", Color = Options.CoolerESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil)
+		else
+			Functions.RemoveESP(Object)
+		end
+	end
+end)
+
+Options.CoolerESPColor:OnChanged(function(Value)
+	for _, Object in Objects.Coolers do
+		if Toggles.CoolerESPToggle.Value then
+			Abysall.ESPLibrary:UpdateObjectColor(Object, Value)
+		end
+	end
+end)
+
+Toggles.DisablePushChairsToggle:OnChanged(function(Value)
+	for _, Prompt in Objects.Prompts do
+		if Prompt.Name == "CartPrompt" or Prompt.ActionText == "Push" then
+			Prompt.Enabled = not Value
 		end
 	end
 end)
@@ -2680,6 +2726,10 @@ if Functions.CheckCompatability({"hookmetamethod", "newcclosure", "getnamecallme
 			end
 
 			if Self.Name == "ClutchHeartbeat" and Method == "FireServer" and Toggles.AutoHeartbeatMinigame.Value or Self.Name == "HideMonster" and Method == "FireServer" and Toggles.AutoHeartbeatMinigame.Value then
+				return
+			end
+
+			if (Self.Name == "WalkedInto" or Self.Name == "ShoulderChecked") and Method == "FireServer" and Toggles.BypassDrones and Toggles.BypassDrones.Value then
 				return
 			end
 
@@ -3740,6 +3790,28 @@ Functions.HandleObject = function(Object)
 	elseif Name == "MouseHole" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Mouse", Color = Options.ChestESPColor.Value }, true) end
 		table.insert(Objects.Chests, Object)
+	elseif Name == "ArchivesWaterCooler" or (Name:find("WaterCooler") or Name:find("Water_Cooler")) then
+		table.insert(Objects.Coolers, Object)
+		if Toggles.CoolerESPToggle.Value then
+			Functions.AddESP({ Object = Object, Text = "Water Cooler", Color = Options.CoolerESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil)
+		end
+		if Toggles.NotifyCoolersToggle and Toggles.NotifyCoolersToggle.Value and Object.Parent and Object.Parent.Name ~= "Drops" then
+			local Pos = Object.PrimaryPart and Object.PrimaryPart.Position or (Object:FindFirstChildWhichIsA("BasePart") and Object:FindFirstChildWhichIsA("BasePart").Position)
+			if Pos and Toggles.NotifyItemsShowDistance.Value then
+				Functions.Notify({ Title = "Water Cooler has spawned.", Body = "It is '" .. math.round(LocalPlayer:DistanceFromCharacter(Pos)) .. "' studs away from you." })
+			else
+				Functions.Notify({ Title = "Water Cooler has spawned." })
+			end
+		end
+	elseif Name == "Drones" then
+		table.insert(Objects.Drones, Object)
+		if Toggles.BypassDrones and Toggles.BypassDrones.Value then
+			local Collider = Object:FindFirstChild("PaperCollider")
+			if Collider and Collider:IsA("BasePart") then
+				Collider.CanCollide = false
+				Collider.CanTouch = false
+			end
+		end
 	elseif Name == "WaterCup" and Object:FindFirstChild("ModulePrompt") then
 		table.insert(Objects.WaterCups, Object)
 		table.insert(Objects.Items, Object)
@@ -4032,6 +4104,9 @@ Functions.HandleObject = function(Object)
 				FakePrompt.Enabled = Object.Enabled
 			end
 		end
+		if (Object.Name == "CartPrompt" or Object.ActionText == "Push") and Toggles.DisablePushChairsToggle and Toggles.DisablePushChairsToggle.Value then
+			Object.Enabled = false
+		end
 		table.insert(Objects.Prompts, Object)
 	elseif Name == "Padlock" then
 		Connections.PadlockConnection = Services.RunService.Heartbeat:Connect(function()
@@ -4111,7 +4186,9 @@ local AllowedInstances = {
 	MovingDoor=true, StardustPickup=true, Hole=true, Groundskeeper=true, MandrakeLive=true,
 	GardenGateButton=true, LotusPetalPickup=true, VineGuillotine=true, LiveEntityBramble=true,
 	RiftSpawn=true, ElevatorBreaker=true, RunnerNodes=true, PathLights=true, DuckBoard=true,
-	Padlock=true, EyestalkEndCutscene=true, MinecartRig=true, SeekMovingNewClone=true
+	Padlock=true, EyestalkEndCutscene=true, MinecartRig=true, SeekMovingNewClone=true,
+	ArchivesWaterCooler=true, Drones=true, ArchivesOfficeChair=true, ArchivesTrashcan=true,
+	ArchivesTerminal=true, ArchivesFihTank=true, ArchivesLargePrinter=true
 }
 
 Functions.QueueObject = function(Object)
@@ -4266,6 +4343,7 @@ local AutoInteractBlacklist = {
 	ToolEventPrompt=true, Prompt=true, PropPrompt=true
 }
 
+local OpenedLootWardrobes = {}
 local TriggerDebounce = false
 
 Functions.TriggerPrompt = function(Prompt)
@@ -4279,14 +4357,57 @@ Functions.TriggerPrompt = function(Prompt)
 		end
 	end
 
-	local IsLockerLoot = (Prompt.ActionText == "Loot" or Prompt.ObjectText == "Wardrobe" or Prompt.ObjectText == "Locker")
+	local IsPushPrompt = Prompt.Name == "CartPrompt" or Prompt.ActionText == "Push"
+	if IsPushPrompt then
+		if (Toggles.DisablePushChairsToggle and Toggles.DisablePushChairsToggle.Value) or Options.AutoInteractIgnoreList.Value["Push Prompts"] then
+			return
+		end
+	end
+
+	local IsPrinter = Prompt.Name == "LidPrompt"
+		or Prompt.ObjectText == "Lid"
+		or (Prompt.Parent and (Prompt.Parent.Name == "Lid" or Prompt.Parent.Name == "PrintedPaper" or Prompt.Parent.Name:find("Printer")))
+		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Printer"))
+	if IsPrinter then
+		return
+	end
+
+	local IsTerminal = Prompt.ObjectText == "Anchor"
+		or (Prompt.Parent and Prompt.Parent.Name == "ArchivesTerminal")
+		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name == "ArchivesTerminal")
+	if IsTerminal and Options.AutoInteractIgnoreList.Value["Terminals"] then
+		return
+	end
+
+	local IsTrashcan = Prompt.Name == "TrashcanPrompt"
+		or Prompt.ObjectText == "Trashcan"
+		or (Prompt.Parent and Prompt.Parent.Name:find("Trashcan"))
+		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Trashcan"))
+	if IsTrashcan and Options.AutoInteractIgnoreList.Value["Trashcans"] then
+		return
+	end
+
+	local IsFishTank = Prompt.Name == "FlakesPrompt"
+		or Prompt.ObjectText == "Fih Tank"
+		or (Prompt.Parent and Prompt.Parent.Name:find("Fih"))
+		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Fih"))
+	if IsFishTank and Options.AutoInteractIgnoreList.Value["Fish Tank"] then
+		return
+	end
+
+	local IsLockerLoot = (Prompt.ActionText == "Loot" and (Prompt.ObjectText == "Wardrobe" or Prompt.ObjectText == "Locker"))
 		and not Prompt.Parent.Name:find("Broken")
 		and not (Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Broken"))
 
 	if IsLockerLoot then
+		if OpenedLootWardrobes[Prompt] or (Prompt.Parent and OpenedLootWardrobes[Prompt.Parent]) then
+			return
+		end
 		if not Toggles.AutoInteractLockers.Value or Options.AutoInteractIgnoreList.Value["Lockers"] then
 			return
 		end
+	elseif Prompt.ObjectText == "Wardrobe" or Prompt.ObjectText == "Locker" or Prompt.Name == "HidePrompt" then
+		return
 	elseif AutoInteractBlacklist[Prompt.Name] then
 		return
 	end
@@ -4364,6 +4485,11 @@ Functions.TriggerPrompt = function(Prompt)
 	if (Prompt.Parent.Name == "LibraryHintPaper" or Prompt.Parent.Name == "PickupItem") and (Functions.HasItem("LibraryHintPaper") or Functions.HasItem("LibraryHintPaperHard")) then return end
 	if Prompt.Parent.Name == "AlarmClock" and Functions.HasItem("AlarmClock") then return end
 	if Prompt.Parent.Name == "KeyObtainFake" or Prompt.Parent.Name == "TithingPlate" then return end
+
+	if Prompt.ActionText == "Loot" and (Prompt.ObjectText == "Wardrobe" or Prompt.ObjectText == "Locker") then
+		OpenedLootWardrobes[Prompt] = true
+		if Prompt.Parent then OpenedLootWardrobes[Prompt.Parent] = true end
+	end
 
 	Functions.FirePrompt(Prompt)
 	TriggerDebounce = true
