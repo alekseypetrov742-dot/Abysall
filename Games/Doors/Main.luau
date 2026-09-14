@@ -2672,7 +2672,7 @@ Connections.RoomsHandler = CurrentRooms.ChildAdded:Connect(function(Room)
 			NewBeam.Attachment0 = A0
 			NewBeam.Attachment1 = A1
 
-			table.insert(Objects.EyestalkHighlights, NewBeam)
+			Functions.RegisterObject(Objects.EyestalkHighlights, NewBeam)
 		end
 
 		Room:WaitForChild("RoomEntrance", 9e9)
@@ -3667,13 +3667,25 @@ Functions.HandleHidingTransparency = function(Model)
 	end
 end
 
-Functions.HandleObject = function(Object)
-	for _, Room in CurrentRooms:GetChildren() do
-		if Object:IsDescendantOf(Room) then
-			Object:SetAttribute("ParentRoom", tonumber(Room.Name))
-			break
+Functions.RegisterObject = function(Array, Object)
+	table.insert(Array, Object)
+	local Connection
+	Connection = Object.Destroying:Connect(function()
+		Connection:Disconnect()
+		local Index = table.find(Array, Object)
+		if Index then
+			table.remove(Array, Index)
 		end
-		task.wait()
+	end)
+end
+
+Functions.HandleObject = function(Object)
+	local current = Object
+	while current and current.Parent and current.Parent ~= CurrentRooms do
+		current = current.Parent
+	end
+	if current and current.Parent == CurrentRooms then
+		Object:SetAttribute("ParentRoom", tonumber(current.Name))
 	end
 
 	if Object.Parent == CurrentRooms then
@@ -3691,7 +3703,7 @@ Functions.HandleObject = function(Object)
 			task.wait(0.5)
 			if Object.Parent then
 				if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Door Key", Color = Options.ObjectiveESPColor.Value }, true) end
-				table.insert(Objects.Objectives, Object)
+				Functions.RegisterObject(Objects.Objectives, Object)
 			end
 		end)
 	elseif Name == "ElectricalKeyObtain" then
@@ -3699,7 +3711,7 @@ Functions.HandleObject = function(Object)
 			task.wait(0.5)
 			if Object.Parent then
 				if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Electrical Key", Color = Options.ObjectiveESPColor.Value }, true) end
-				table.insert(Objects.Objectives, Object)
+				Functions.RegisterObject(Objects.Objectives, Object)
 			end
 		end)
 	elseif Name == "TimerLever" then
@@ -3712,12 +3724,12 @@ Functions.HandleObject = function(Object)
 					Functions.RemoveESP(Object)
 					Functions.BlacklistESP(Object)
 				end)
-				table.insert(Objects.Objectives, Object)
+				Functions.RegisterObject(Objects.Objectives, Object)
 			end
 		end)
 	elseif Name == "LiveHintBook" then
 		if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Hint Book", Color = Options.ObjectiveESPColor.Value }, true) end
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "LiveBreakerPolePickup" then
 		if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Fuse Breaker", Color = Options.ObjectiveESPColor.Value }, true) end
 		for _, Child in Object:GetChildren() do
@@ -3725,17 +3737,17 @@ Functions.HandleObject = function(Object)
 				Child:Destroy()
 			end
 		end
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "LibraryHintPaper" or Name == "PickupItem" then
 		if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Hint Paper", Color = Options.ObjectiveESPColor.Value }, true) end
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "MinesAnchor" then
 		if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Anchor [" .. Object:WaitForChild("Sign").TextLabel.Text .. "]", Color = Options.ObjectiveESPColor.Value }, true) end
 		Object:GetAttributeChangedSignal("Activated"):Once(function()
 			Functions.RemoveESP(Object)
 			Functions.BlacklistESP(Object)
 		end)
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "WaterPump" then
 		if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object:WaitForChild("Wheel"), Text = "Water Pump", Color = Options.ObjectiveESPColor.Value }, true) end
 		Object:WaitForChild("Wheel").Sound.Played:Once(function()
@@ -3744,28 +3756,28 @@ Functions.HandleObject = function(Object)
 			Functions.RemoveESP(Object.Wheel)
 			Functions.BlacklistESP(Object.Wheel)
 		end)
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "CringlePresent" then
 		if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Present", Color = Options.ObjectiveESPColor.Value }, true) end
 		Object:WaitForChild("ToolProp").Highlight:Destroy()
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "LeverForGate" then
 		if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Gate Lever", Color = Options.ObjectiveESPColor.Value }, true) end
 		Object:WaitForChild("Main").SoundToPlay.Played:Once(function()
 			Functions.RemoveESP(Object)
 			Functions.BlacklistESP(Object)
 		end)
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "VineGuillotine" then
 		if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object.Lever, Text = "Vine Lever", Color = Options.ObjectiveESPColor.Value }, true) end
 		Object.Lever:WaitForChild("ActivateEventPrompt"):GetAttributeChangedSignal("Interactions"):Once(function()
 			Functions.RemoveESP(Object)
 			Functions.BlacklistESP(Object)
 		end)
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "MandrakeLive" then
 		if Toggles.ObjectiveESPToggle.Value and Options.EntityESPOptions.Value["Mandrake Hole"] then Functions.AddESP({ Object = Object.Hole, Text = "Mandrake Hole", Color = Options.EntityESPColor.Value }, true) end
-		table.insert(Objects.Entities, Object.Hole)
+		Functions.RegisterObject(Objects.Entities, Object.Hole)
 	elseif Name == "MinesGenerator" then
 		task.spawn(function()
 			task.wait(0.75)
@@ -3775,7 +3787,7 @@ Functions.HandleObject = function(Object)
 					Functions.RemoveESP(Object)
 					Functions.BlacklistESP(Object)
 				end)
-				table.insert(Objects.Objectives, Object)
+				Functions.RegisterObject(Objects.Objectives, Object)
 			end
 		end)
 	elseif Name == "FuseObtain" then
@@ -3784,24 +3796,24 @@ Functions.HandleObject = function(Object)
 			Functions.RemoveESP(Object)
 			Functions.BlacklistESP(Object)
 		end)
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "MinesGateButton" then
 		if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Gate Button", Color = Options.ObjectiveESPColor.Value }, true) end
 		Object.Parent:WaitForChild("MinesGate").Main.SoundOpen.Played:Once(function()
 			Functions.RemoveESP(Object)
 			Functions.BlacklistESP(Object)
 		end)
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "GardenGateButton" then
 		if Toggles.ObjectiveESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Gate Button", Color = Options.ObjectiveESPColor.Value }, true) end
 		Object.Parent:WaitForChild("GardenGate").Collision.Sound.Played:Once(function()
 			Functions.RemoveESP(Object)
 			Functions.BlacklistESP(Object)
 		end)
-		table.insert(Objects.Objectives, Object)
+		Functions.RegisterObject(Objects.Objectives, Object)
 	elseif Name == "Ladder" then
 		if Toggles.LadderESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Ladder", Color = Options.LadderESPColor.Value }, true) end
-		table.insert(Objects.Ladders, Object)
+		Functions.RegisterObject(Objects.Ladders, Object)
 	elseif Name == "Door" and Object.Parent and tonumber(Object.Parent.Name) then
 		local DoorParts = {}
 		for _, Child in Object:GetChildren() do
@@ -3828,7 +3840,7 @@ Functions.HandleObject = function(Object)
 				local W = Instance.new("WeldConstraint", HP)
 				W.Part0 = HP W.Part1 = DoorPart W.Enabled = true
 			end
-			table.insert(Objects.Doors, HighlightModel)
+			Functions.RegisterObject(Objects.Doors, HighlightModel)
 			if Toggles.DoorESPToggle.Value then Functions.AddESP({ Object = HighlightModel, Text = Functions.GetDoorESPText(Object), Color = Options.DoorESPColor.Value }, true) end
 		else
 			local Root = Object:WaitForChild("Door", 9e9)
@@ -3843,7 +3855,7 @@ Functions.HandleObject = function(Object)
 			local W = Instance.new("WeldConstraint", HP)
 			W.Part0 = HP W.Part1 = Root W.Enabled = true
 			Instance.new("Humanoid", Object).Name = "HighlightHumanoid"
-			table.insert(Objects.Doors, HP)
+			Functions.RegisterObject(Objects.Doors, HP)
 			if Toggles.DoorESPToggle.Value then Functions.AddESP({ Object = HP, Text = Functions.GetDoorESPText(Object), Color = Options.DoorESPColor.Value }, true) end
 		end
 
@@ -3905,7 +3917,7 @@ Functions.HandleObject = function(Object)
 			local A1 = Instance.new("Attachment", PrevNode2)
 			Beam.Attachment0 = A0
 			Beam.Attachment1 = A1
-			table.insert(Objects.SeekHighlights, Beam)
+			Functions.RegisterObject(Objects.SeekHighlights, Beam)
 		end
 
 		task.spawn(function()
@@ -3916,7 +3928,7 @@ Functions.HandleObject = function(Object)
 		end)
 
 		table.insert(Connections, PLConn)
-		table.insert(Objects.PathLights, Object)
+		Functions.RegisterObject(Objects.PathLights, Object)
 		Object.Destroying:Once(function() PLConn:Disconnect() end)
 	elseif Name == "SeekMovingNewClone" then
 		local Connection = Object.Destroying:Connect(function()
@@ -3938,7 +3950,7 @@ Functions.HandleObject = function(Object)
 				NewBridge.Color = Color3.fromRGB(0, 255, 255)
 				NewBridge.Transparency = Toggles.BypassSeekObstructions.Value and 0 or 1
 				NewBridge.Material = Enum.Material.ForceField
-				table.insert(Objects.SeekBridges, NewBridge)
+				Functions.RegisterObject(Objects.SeekBridges, NewBridge)
 			end
 			task.wait()
 		end
@@ -3992,7 +4004,7 @@ Functions.HandleObject = function(Object)
 				local NextNode = GetClosestNode(Node)
 				if NextNode then
 					Node:SetAttribute("Turn", GetDirection(Node, NextNode))
-					table.insert(Objects.SeekNodes, Node)
+					Functions.RegisterObject(Objects.SeekNodes, Node)
 				end
 			end
 			task.wait()
@@ -4001,14 +4013,14 @@ Functions.HandleObject = function(Object)
 	elseif Name == "EyestalkEndCutscene" then
 		Object.Name = "_EyestalkEndCutscene"
 	elseif Name == "DuckBoard" then
-		table.insert(Objects.SeekDuckBoards, Object)
+		Functions.RegisterObject(Objects.SeekDuckBoards, Object)
 	elseif HidingSpotLabels[Name] then
 		if Toggles.HidingSpotESPToggle.Value then Functions.AddESP({ Object = Object, Text = HidingSpotLabels[Name], Color = Options.HidingSpotESPColor.Value }, true) end
 		Functions.HandleHidingTransparency(Object)
-		table.insert(Objects.HidingSpots, Object)
+		Functions.RegisterObject(Objects.HidingSpots, Object)
 	elseif Name == "Lava" then
 		if Toggles.BypassKillbricks.Value then Object.CanTouch = false end
-		table.insert(Objects.Obstructions, Object)
+		Functions.RegisterObject(Objects.Obstructions, Object)
 	elseif Name == "ScaryWall" then
 		for _, Part in Object:GetDescendants() do
 			if Part:IsA("BasePart") then
@@ -4030,27 +4042,27 @@ Functions.HandleObject = function(Object)
                 table.insert(Connections, Connection2)
             end
 		end
-		table.insert(Objects.Obstructions, Object)
+		Functions.RegisterObject(Objects.Obstructions, Object)
 	elseif Name == "ChestBox" or Name == "ChestBoxLocked" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = Object:GetAttribute("Locked") and "Locked Chest" or "Chest", Color = Options.ChestESPColor.Value }, true) end
-		table.insert(Objects.Chests, Object)
+		Functions.RegisterObject(Objects.Chests, Object)
 	elseif Name == "Toolbox" or Name == "Toolbox_Locked" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = Object:GetAttribute("Locked") and "Locked Toolbox" or "Toolbox", Color = Options.ChestESPColor.Value }, true) end
-		table.insert(Objects.Chests, Object)
+		Functions.RegisterObject(Objects.Chests, Object)
 	elseif Name == "Chest_Vine" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Vine Chest", Color = Options.ChestESPColor.Value }, true) end
-		table.insert(Objects.Chests, Object)
+		Functions.RegisterObject(Objects.Chests, Object)
 	elseif Name == "Toolshed_Small" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Toolshed", Color = Options.ChestESPColor.Value }, true) end
-		table.insert(Objects.Chests, Object)
+		Functions.RegisterObject(Objects.Chests, Object)
 	elseif Name == "Locker_Small_Locked" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Locked Item Locker", Color = Options.ChestESPColor.Value }, true) end
-		table.insert(Objects.Chests, Object)
+		Functions.RegisterObject(Objects.Chests, Object)
 	elseif Name == "MouseHole" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Mouse", Color = Options.ChestESPColor.Value }, true) end
-		table.insert(Objects.Chests, Object)
+		Functions.RegisterObject(Objects.Chests, Object)
 	elseif Name == "ArchivesWaterCooler" or (Name:find("WaterCooler") or Name:find("Water_Cooler")) then
-		table.insert(Objects.Coolers, Object)
+		Functions.RegisterObject(Objects.Coolers, Object)
 		if Toggles.CoolerESPToggle.Value then
 			Functions.AddESP({ Object = Object, Text = "Water Cooler", Color = Options.CoolerESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil)
 		end
@@ -4063,7 +4075,7 @@ Functions.HandleObject = function(Object)
 			end
 		end
 	elseif (Name == "Drones" or Name == "Drone" or Name:find("Drone") or Name:find("Stampede") or Name == "RushHour" or Name == "RunningDrone") and not Name:find("PaperPlane") then
-		table.insert(Objects.Drones, Object)
+		Functions.RegisterObject(Objects.Drones, Object)
 		if Toggles.BypassDrones and Toggles.BypassDrones.Value then
 			if Object:IsA("BasePart") then
 				Object.CanCollide = false
@@ -4087,7 +4099,7 @@ Functions.HandleObject = function(Object)
 		or (Name:find("Electric") and not (Name:find("Key") or Name:find("Breaker") or Name:find("Elevator")))
 		or (Name:find("Shock") and not Name:find("Shop"))
 		or Object:HasTag("CurrentsPuddle") then
-		table.insert(Objects.ElectricWater, Object)
+		Functions.RegisterObject(Objects.ElectricWater, Object)
 		if Toggles.BypassElectricWater and Toggles.BypassElectricWater.Value then
 			UpdateElectricPuddle(Object, true)
 		end
@@ -4098,7 +4110,7 @@ Functions.HandleObject = function(Object)
 			end
 		end)
 	elseif Name == "ItemOnlyBarrier" or Name:find("ItemOnlyBarrier") then
-		table.insert(Objects.CrouchBarriers, Object)
+		Functions.RegisterObject(Objects.CrouchBarriers, Object)
 		if Object:IsA("BasePart") then
 			if Toggles.NoSlowdownBarriers and Toggles.NoSlowdownBarriers.Value then
 				Object.CanCollide = false
@@ -4111,7 +4123,7 @@ Functions.HandleObject = function(Object)
 			Object.Destroying:Once(function() BarrierConn:Disconnect() end)
 		end
 	elseif Name == "OneWayTwoHandDoor" then
-		table.insert(Objects.OneWayDoors, Object)
+		Functions.RegisterObject(Objects.OneWayDoors, Object)
 		local function setupTurnstylePrompt(p)
 			if p:IsA("ProximityPrompt") then
 				if Toggles.InstantPrompts and Toggles.InstantPrompts.Value then p.HoldDuration = 0 end
@@ -4125,14 +4137,14 @@ Functions.HandleObject = function(Object)
 		for _, desc in Object:GetDescendants() do setupTurnstylePrompt(desc) end
 		Object.DescendantAdded:Connect(setupTurnstylePrompt)
 	elseif Name == "ArchivesStorageBox" or (Name:find("StorageBox") and not Name:find("Chest")) then
-		table.insert(Objects.StorageBoxes, Object)
+		Functions.RegisterObject(Objects.StorageBoxes, Object)
 		if Toggles.ItemESPToggle.Value then
 			Functions.AddESP({ Object = Object, Text = "Storage Box", Color = Options.ItemESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil)
 		end
-		table.insert(Objects.Items, Object)
+		Functions.RegisterObject(Objects.Items, Object)
 	elseif Name == "WaterCup" and Object:FindFirstChild("ModulePrompt") then
-		table.insert(Objects.WaterCups, Object)
-		table.insert(Objects.Items, Object)
+		Functions.RegisterObject(Objects.WaterCups, Object)
+		Functions.RegisterObject(Objects.Items, Object)
 		UpdateWaterCupESP(Object)
 
 		if Toggles.NotifyItemsToggle.Value and Options.NotifyItemList.Value["Water Cup"] and Object.Parent.Name ~= "Drops" then
@@ -4159,20 +4171,20 @@ Functions.HandleObject = function(Object)
 			end
 		end
 
-		table.insert(Objects.Items, Object)
+		Functions.RegisterObject(Objects.Items, Object)
 	elseif Name == "Green_Herb" then
 		if Toggles.ItemESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Green Herb", Color = Options.ItemESPColor.Value }, true) end
-		table.insert(Objects.Items, Object)
+		Functions.RegisterObject(Objects.Items, Object)
 	elseif Name == "GoldPile" and Object:GetAttribute("GoldValue") then
 		if Toggles.CurrencyESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Gold Pile [" .. Object:GetAttribute("GoldValue") .. "]", Color = Options.CurrencyESPColor.Value }, true) end
-		table.insert(Objects.Currency, Object)
+		Functions.RegisterObject(Objects.Currency, Object)
 	elseif Name == "StardustPickup" then
 		if Toggles.CurrencyESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Stardust Pile", Color = Options.CurrencyESPColor.Value }, true) end
-		table.insert(Objects.Currency, Object)
+		Functions.RegisterObject(Objects.Currency, Object)
 	elseif Name == "GiggleCeiling" then
 		if Toggles.EntityESPToggle.Value and Options.EntityESPOptions.Value["Giggle"] then Functions.AddESP({ Object = Object, Text = "Giggle", Color = Options.EntityESPColor.Value }, true) end
 		if Toggles.BypassGiggle.Value then Object:WaitForChild("Hitbox").CanTouch = false end
-		table.insert(Objects.Entities, Object)
+		Functions.RegisterObject(Objects.Entities, Object)
 	elseif Name == "GloomPile" then
 		if Toggles.BypassGloombatEggs.Value then
 			for _, Part in Object:GetDescendants() do
@@ -4189,7 +4201,7 @@ Functions.HandleObject = function(Object)
 		end
 
 		table.insert(Connections, Connection)
-		table.insert(Objects.Entities, Object)
+		Functions.RegisterObject(Objects.Entities, Object)
 	elseif Name == "TriggerEventCollision" and Functions.CheckCompatability({"firetouchinterest"}) then
 		if (Floor == "Fools" or Floor == "OldHotel") and Toggles.RemoveSeekTrigger.Value then
 			task.spawn(function()
@@ -4205,7 +4217,7 @@ Functions.HandleObject = function(Object)
 				end
 			end)
 		end
-		table.insert(Objects.EventTriggers, Object)
+		Functions.RegisterObject(Objects.EventTriggers, Object)
 	elseif Name == "DoorFake" or Name == "FakeDoor" then
 		if Object.Parent and Object:FindFirstChild("Hidden") then
 			if Toggles.BypassDupe.Value then
@@ -4231,14 +4243,14 @@ Functions.HandleObject = function(Object)
 					end
 				end
 			end
-			table.insert(Objects.Entities, Object)
+			Functions.RegisterObject(Objects.Entities, Object)
 		end
 	elseif Name == "SideroomSpace" then
 		if Toggles.BypassVacuum.Value then
 			Object:WaitForChild("Collision").CanCollide = true
 			Object:WaitForChild("Collision").CanTouch = false
 		end
-		table.insert(Objects.Entities, Object)
+		Functions.RegisterObject(Objects.Entities, Object)
 	elseif Name == "Snare" then
 		if Toggles.EntityESPToggle.Value and Options.EntityESPOptions.Value["Snare"] then Functions.AddESP({ Object = Object, Text = "Snare", Color = Options.EntityESPColor.Value }, true) end
 		for _, Part in Object:GetDescendants() do
@@ -4248,7 +4260,7 @@ Functions.HandleObject = function(Object)
 			if Part:IsA("BasePart") then Part.CanTouch = not Toggles.BypassSnare.Value end
 		end)
 		table.insert(Connections, Connection)
-		table.insert(Objects.Entities, Object)
+		Functions.RegisterObject(Objects.Entities, Object)
 
 		if Object:FindFirstChild("Snare") then
 			Object:WaitForChild("Snare"):WaitForChild("Roots").Transparency = 1
@@ -4262,7 +4274,7 @@ Functions.HandleObject = function(Object)
 		for _, Part in Object:GetDescendants() do
 			if Part:IsA("BasePart") then
 				Part.CanTouch = not Toggles.BypassSeekObstructions.Value
-				table.insert(Objects.SeekObstructions, Part)
+				Functions.RegisterObject(Objects.SeekObstructions, Part)
 			end
 		end
 	elseif Name == "SeekFloodline" then
@@ -4273,7 +4285,7 @@ Functions.HandleObject = function(Object)
 			end
 		end)
 		Object.Destroying:Once(function() FloodConn:Disconnect() end)
-		table.insert(Objects.SeekObstructions, Object)
+		Functions.RegisterObject(Objects.SeekObstructions, Object)
 	elseif Object:GetAttribute("RawName") and Object:GetAttribute("RawName"):find("Halt") or Object:GetAttribute("Shade") == true then
 		if Toggles.NotifyEntities.Value and Options.EntityList.Value["Halt"] then
 			Functions.Notify({ Title = "Entity 'Halt' will spawn in the next room.", Image = EntityIcons["Halt"] })
@@ -4291,7 +4303,7 @@ Functions.HandleObject = function(Object)
 		end)
 	elseif Name == "BananaPeel" then
 		if Toggles.BypassBanana.Value then Object.CanTouch = false end
-		table.insert(Objects.Entities, Object)
+		Functions.RegisterObject(Objects.Entities, Object)
 	elseif Name == "JeffTheKiller" then
 		if Toggles.BypassJeff.Value then
 			for _, Part in Object:GetDescendants() do
@@ -4301,17 +4313,17 @@ Functions.HandleObject = function(Object)
 		end
 	elseif Name == "GrumbleRig" then
 		if Toggles.EntityESPToggle.Value and Options.EntityESPOptions.Value["Grumble"] then Functions.AddESP({ Object = Object, Text = "Grumble", Color = Options.EntityESPColor.Value }, true) end
-		table.insert(Objects.Entities, Object)
+		Functions.RegisterObject(Objects.Entities, Object)
 	elseif Name == "LiveEntityBramble" then
 		if Toggles.EntityESPToggle.Value and Options.EntityESPOptions.Value["Bramble"] then Functions.AddESP({ Object = Object, Text = "Bramble", Color = Options.EntityESPColor.Value }, true) end
-		table.insert(Objects.Entities, Object)
+		Functions.RegisterObject(Objects.Entities, Object)
 	elseif Name == "Groundskeeper" then
 		if Toggles.EntityESPToggle.Value and Options.EntityESPOptions.Value["Groundskeeper"] then Functions.AddESP({ Object = Object, Text = "Groundskeeper", Color = Options.EntityESPColor.Value }, true) end
 		if Toggles.NotifyEntities.Value and Options.EntityList.Value["Groundskeeper"] then
 			local ED = Entities["Groundskeeper"]
 			Functions.Notify({ Title = ED.NotifyMessage.Title, Body = ED.NotifyMessage.Body, Image = EntityIcons["Groundskeeper"] })
 		end
-		table.insert(Objects.Entities, Object)
+		Functions.RegisterObject(Objects.Entities, Object)
 	elseif Name == "Figure" or Name == "FigureRig" or Name == "FigureRagdoll" then
 		for _, Part in Object:GetDescendants() do
 			if Part:IsA("BasePart") then
@@ -4319,7 +4331,7 @@ Functions.HandleObject = function(Object)
 			end
 		end
 		if Toggles.EntityESPToggle.Value and Options.EntityESPOptions.Value["Figure"] then Functions.AddESP({ Object = Object, Text = "Figure", Color = Options.EntityESPColor.Value }, true) end
-		table.insert(Objects.Entities, Object)
+		Functions.RegisterObject(Objects.Entities, Object)
 		if Toggles.RemoveFigure.Value and Functions.CheckCompatability({"isnetworkowner"}) then
 			if Floor == "Mines" then
 				for _, Part in Object:GetDescendants() do
@@ -4354,7 +4366,7 @@ Functions.HandleObject = function(Object)
 		if ToggleMap[Name] and Toggles[ToggleMap[Name]].Value then
 			Object:PivotTo(CFrame.new(-10000, -10000, -10000))
 		end
-		table.insert(Objects.Obstructions, Object)
+		Functions.RegisterObject(Objects.Obstructions, Object)
 	elseif Name == "ElevatorBreaker" then
 		if Toggles.AutoBreakerBox.Value and not Globals.BreakerBoxNotified then
 			Functions.Notify({ Title = "Interact with the breaker box.", Body = "It will be automatically solved." })
@@ -4430,7 +4442,7 @@ Functions.HandleObject = function(Object)
 					FPEnabledConn:Disconnect()
 				end)
 				table.insert(Connections, FPEnabledConn)
-				table.insert(Objects.Prompts, FakePrompt)
+				Functions.RegisterObject(Objects.Prompts, FakePrompt)
 
 				FakePrompt.Enabled = false
 				task.wait()
@@ -4444,7 +4456,7 @@ Functions.HandleObject = function(Object)
 			Object.HoldDuration = 0
 			Object.MaxActivationDistance = math.max(Object.MaxActivationDistance, 12)
 		end
-		table.insert(Objects.Prompts, Object)
+		Functions.RegisterObject(Objects.Prompts, Object)
 	elseif Name == "Padlock" then
 		Connections.PadlockConnection = Services.RunService.Heartbeat:Connect(function()
 			if Object.PrimaryPart then
@@ -4540,16 +4552,10 @@ Functions.QueueObject = function(Object)
 	if not AllowedInstances[Name] and not isDrone and not isElectric and not isBarrier and Object.ClassName ~= "ProximityPrompt" and Object.Parent ~= CurrentRooms and not ItemNames[Name] then
 		return
 	end
-	table.insert(Globals.ObjectQueue, Object)
+	Functions.HandleObject(Object)
 end
 
 Globals.QueueDone = true
-Connections.QueueConnection = Services.RunService.RenderStepped:Connect(function()
-	local Object = table.remove(Globals.ObjectQueue, 1)
-	if Object then
-		Functions.HandleObject(Object)
-	end
-end)
 
 for _, Object in Services.Workspace:GetDescendants() do
 	task.spawn(function() Functions.QueueObject(Object) end)
@@ -4992,7 +4998,7 @@ Connections.FloorReplicatedHandler = FloorReplicated.DescendantAdded:Connect(fun
 	then
 		Object:SetAttribute("OriginalName", Object.Name)
 		if Toggles.DisableEntityJumpscares.Value then Object.Name = Object.Name .. "_Disabled" end
-		table.insert(Objects.JumpscareModules, Object)
+		Functions.RegisterObject(Objects.JumpscareModules, Object)
 	end
 end)
 
@@ -5069,7 +5075,7 @@ Connections.EntityHandler = Services.Workspace.ChildAdded:Connect(function(Entit
 				Functions.AddESP({ Object = Entity, Text = Alias, Color = Options.EntityESPColor.Value })
 			end
 		end
-		table.insert(Objects.Entities, Entity)
+		Functions.RegisterObject(Objects.Entities, Entity)
 	end
 
 	if RusherAliases[EntityData.Alias] then
