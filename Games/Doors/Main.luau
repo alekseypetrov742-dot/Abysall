@@ -4666,8 +4666,8 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 	local Active = Toggles.AutoInteractToggle.Value or Options.AutoInteractKeybind:GetState()
 	if not Active then return end
 	if Character and Character:GetAttribute("Hiding") == true then return end
-	-- Throttle to ~16 FPS to prevent CPU hogging and micro-freezes
-	if tick() - Globals.LastAutoInteractFire < 0.06 then return end
+	-- Balanced rate (~40 checks/sec) for instant response without frame drops
+	if tick() - Globals.LastAutoInteractFire < 0.025 then return end
 	Globals.LastAutoInteractFire = tick()
 
 	local Root = Character and (Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("Collision") or Character:FindFirstChild("Head"))
@@ -4707,8 +4707,8 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 			continue
 		end
 
-		-- 5. Fast check: cooldown on this specific prompt
-		if tick() - (PromptCooldowns[Prompt] or 0) < 0.35 then continue end
+		-- 5. Fast check: cooldown on this specific prompt (0.12s allows rapid interaction while preventing spam)
+		if tick() - (PromptCooldowns[Prompt] or 0) < 0.12 then continue end
 
 		-- 6. Calculate squared distance with zero vector allocations
 		local PromptParent = Prompt.Parent
@@ -4729,7 +4729,8 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 			if DistSq <= (MaxDist * MaxDist) then
 				Functions.TriggerPrompt(Prompt)
 				Count += 1
-				if Count >= 2 then break end
+				-- Allow up to 6 prompts per tick (e.g. multiple drawers + coins at once)
+				if Count >= 6 then break end
 			end
 		end
 	end
