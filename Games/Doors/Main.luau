@@ -3514,19 +3514,22 @@ Functions.HandleCharacter = function(NewCharacter)
 		if Floor == "OldHotel" or Floor == "Fools" then
 			local SpoofOffset = (Toggles.PositionSpoof.Value and NearEntity and 200) or (NearFigure and 200) or 0
 			Globals.SpoofOffset = SpoofOffset
-			local targetPos = RootPart.Position + Vector3.new(0, SpoofOffset, 0)
-			local welds = {}
-			for _, joint in pairs(Character:GetDescendants()) do
-				if joint:IsA("WeldConstraint") then
-					if joint.Part0 == Collision or joint.Part1 == Collision then
-						table.insert(welds, joint)
-						joint.Enabled = false
+			if Globals.LastSpoofOffset ~= SpoofOffset then
+				Globals.LastSpoofOffset = SpoofOffset
+				local targetPos = RootPart.Position + Vector3.new(0, SpoofOffset, 0)
+				local welds = {}
+				for _, joint in pairs(Character:GetDescendants()) do
+					if joint:IsA("WeldConstraint") then
+						if joint.Part0 == Collision or joint.Part1 == Collision then
+							table.insert(welds, joint)
+							joint.Enabled = false
+						end
 					end
 				end
-			end
-			Collision.Position = targetPos
-			for _, joint in pairs(welds) do
-				joint.Enabled = true
+				Collision.Position = targetPos
+				for _, joint in pairs(welds) do
+					joint.Enabled = true
+				end
 			end
 			Collision.CanCollide = false
 			if Floor == "Fools" then
@@ -3553,20 +3556,23 @@ Functions.HandleCharacter = function(NewCharacter)
 			local SpoofOffset = (Toggles.PositionSpoof.Value and HasDanger) and 200 or 0
 			Globals.SpoofOffset = SpoofOffset
 
-			local targetPos = RootPart.Position + Vector3.new(0, 0.18 + SpoofOffset, 0)
-			local welds = {}
-			for _, joint in pairs(Character:GetDescendants()) do
-				if joint:IsA("WeldConstraint") then
-					if joint.Part0 == Collision or joint.Part1 == Collision or joint.Part0 == CollisionPart or joint.Part1 == CollisionPart then
-						table.insert(welds, joint)
-						joint.Enabled = false
+			if Globals.LastSpoofOffset ~= SpoofOffset then
+				Globals.LastSpoofOffset = SpoofOffset
+				local targetPos = RootPart.Position + Vector3.new(0, 0.18 + SpoofOffset, 0)
+				local welds = {}
+				for _, joint in pairs(Character:GetDescendants()) do
+					if joint:IsA("WeldConstraint") then
+						if joint.Part0 == Collision or joint.Part1 == Collision or joint.Part0 == CollisionPart or joint.Part1 == CollisionPart then
+							table.insert(welds, joint)
+							joint.Enabled = false
+						end
 					end
 				end
-			end
-			Collision.Position = targetPos
-			if CollisionPart then CollisionPart.Position = targetPos end
-			for _, joint in pairs(welds) do
-				joint.Enabled = true
+				Collision.Position = targetPos
+				if CollisionPart then CollisionPart.Position = targetPos end
+				for _, joint in pairs(welds) do
+					joint.Enabled = true
+				end
 			end
 			Collision.CanTouch = (SpoofOffset == 0)
 			CollisionPart.CanTouch = (SpoofOffset == 0)
