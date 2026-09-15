@@ -55,6 +55,8 @@ local Objects = {
 	SeekBridges = {},
 	PathLights = {},
 	StorageBoxes = {},
+	HonchoDeposits = {},
+	HonchoBoxes = {},
 	OneWayDoors = {},
 	CrouchBarriers = {}
 }
@@ -989,6 +991,27 @@ Functions.AddESP = function(ESPOptions, RoomBased)
 	end
 end
 
+Functions.UpdateHonchoESP = function()
+	local activeBoxIDs = {}
+	for _, Deposit in Objects.HonchoDeposits do
+		local id = Deposit:GetAttribute("BoxID")
+		if id then
+			activeBoxIDs[id] = true
+		end
+	end
+
+	for _, Box in Objects.HonchoBoxes do
+		local toolBoxID = Box:GetAttribute("Tool_BoxID")
+		if toolBoxID and activeBoxIDs[toolBoxID] then
+			if Toggles.HonchoBoxESPToggle and Toggles.HonchoBoxESPToggle.Value then
+				Functions.AddESP({ Object = Box, Text = "Correct Box", Color = Options.HonchoBoxESPColor.Value })
+			end
+		else
+			Functions.RemoveESP(Box)
+		end
+	end
+end
+
 Functions.RemoveESP = function(Object)
 	local Conn = ESPConnections[Object]
 	if Conn then
@@ -1544,6 +1567,11 @@ local function UpdateElectricPuddle(Puddle, Value)
 		Puddle.CanCollide = not Value
 		if Value then
 			if not ElectricWaterPads[Puddle] or not ElectricWaterPads[Puddle].Parent then
+				if not Globals.ElectricPadsFolder then
+					Globals.ElectricPadsFolder = Instance.new("Folder")
+					Globals.ElectricPadsFolder.Name = "AbysallElectricWaterPads"
+					Globals.ElectricPadsFolder.Parent = Services.Workspace
+				end
 				local Pad = Instance.new("Part")
 				Pad.Name = "AbysallElectricWaterPad"
 				Pad.Anchored = true
@@ -1552,7 +1580,7 @@ local function UpdateElectricPuddle(Puddle, Value)
 				Pad.Transparency = 1
 				Pad.CFrame = Puddle.CFrame + Vector3.new(0, 0.4, 0)
 				Pad.Size = Vector3.new(Puddle.Size.X + 0.5, 0.15, Puddle.Size.Z + 0.5)
-				Pad.Parent = Puddle
+				Pad.Parent = Globals.ElectricPadsFolder
 				ElectricWaterPads[Puddle] = Pad
 			end
 		else
@@ -2124,6 +2152,26 @@ local EntityESPLabels = {
 local NodeEntities = {
 	Rush = true, Ambush = true, Eyes = true, Blitz = true, Lookman = true, ["A-60"] = true, ["A-120"] = true, Sally = true, ["Jeff The Killer"] = true, Monument = true, ["AR0xMBUSH"] = true, ["RNIUSHCG=="] = true
 }
+
+Groupboxes.Visuals_ESP_Toggles:AddToggle("HonchoBoxESPToggle", { Text = "Honcho Boxes", Default = false, Tooltip = "Highlights the correct storage boxes during the Honcho minigame." })
+Toggles.HonchoBoxESPToggle:AddColorPicker("HonchoBoxESPColor", { Text = "Honcho Boxes", Default = Color3.fromRGB(255, 128, 0), Transparency = 0 })
+
+Toggles.HonchoBoxESPToggle:OnChanged(function(Value)
+	if Value then
+		Functions.UpdateHonchoESP()
+	else
+		for _, Box in Objects.HonchoBoxes do
+			Functions.RemoveESP(Box)
+		end
+	end
+end)
+Options.HonchoBoxESPColor:OnChanged(function(Value)
+	for _, Box in Objects.HonchoBoxes do 
+		if ESPConnections[Box] then
+			Abysall.ESPLibrary:UpdateObjectColor(Box, Value) 
+		end
+	end
+end)
 
 Toggles.DoorESPToggle:OnChanged(function(Value)
 	for _, Object in Objects.Doors do
@@ -3034,6 +3082,15 @@ Functions.HandleCharacter = function(NewCharacter)
 
 	Collision = NewCharacter:WaitForChild("Collision")
 	CollisionPart  = NewCharacter:FindFirstChild("CollisionPart") or NewCharacter:FindFirstChild("Collision")
+	
+	for _, joint in pairs(NewCharacter:GetDescendants()) do
+		if joint:IsA("JointInstance") or joint:IsA("WeldConstraint") then
+			if joint.Part0 == Collision or joint.Part1 == Collision or joint.Part0 == CollisionPart or joint.Part1 == CollisionPart then
+				joint:Destroy()
+			end
+		end
+	end
+
 	CollisionClone = Collision:Clone()
 	CollisionClone.Parent = NewCharacter
 	CollisionClone.Name = "CollisionClone"
@@ -4109,7 +4166,22 @@ Functions.HandleObject = function(Object)
 				desc.CanCollide = false
 			end
 		end)
-	elseif Name == "ItemOnlyBarrier" or Name:find("ItemOnlyBarrier") then
+	elseif Name == "ArchivesPackageDeposit" then
+		Functions.RegisterObject(Objects.HonchoDeposits, Object)
+		Object:GetAttributeChangedSignal("BoxID"):Connect(function()
+			if Toggles.HonchoBoxESPToggle and Toggles.HonchoBoxESPToggle.Value then
+				Functions.UpdateHonchoESP()
+			end
+		end)
+		if Toggles.HonchoBoxESPToggle and Toggles.HonchoBoxESPToggle.Value then
+			Functions.UpdateHonchoESP()
+		end
+	elseif Name == "ArchivesStorageBox" then
+		Functions.RegisterObject(Objects.HonchoBoxes, Object)
+		if Toggles.HonchoBoxESPToggle and Toggles.HonchoBoxESPToggle.Value then
+			Functions.UpdateHonchoESP()
+		end
+	elseif Name == "ItemOnlyBarrier" or Name:find("ItemOnlyBarrier") or Name == "PlayerBarrier" or Name:find("PlayerBarrier") then
 		Functions.RegisterObject(Objects.CrouchBarriers, Object)
 		if Object:IsA("BasePart") then
 			if Toggles.NoSlowdownBarriers and Toggles.NoSlowdownBarriers.Value then
@@ -4128,10 +4200,6 @@ Functions.HandleObject = function(Object)
 			if p:IsA("ProximityPrompt") then
 				if Toggles.InstantPrompts and Toggles.InstantPrompts.Value then p.HoldDuration = 0 end
 				if Toggles.PromptClip and Toggles.PromptClip.Value then p.RequiresLineOfSight = false end
-				if Toggles.AutoTurnstyles and Toggles.AutoTurnstyles.Value then
-					p.HoldDuration = 0
-					p.MaxActivationDistance = math.max(p.MaxActivationDistance, 12)
-				end
 			end
 		end
 		for _, desc in Object:GetDescendants() do setupTurnstylePrompt(desc) end
@@ -4750,12 +4818,8 @@ Functions.TriggerPrompt = function(Prompt)
 	local IsTerminal = Prompt.ObjectText == "Anchor"
 		or (Prompt.Parent and Prompt.Parent.Name == "ArchivesTerminal")
 		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name == "ArchivesTerminal")
-	if IsTerminal then
-		if Toggles.AutoChaseTerminals and Toggles.AutoChaseTerminals.Value then
-			-- Allowed during chase
-		elseif IsJunk then
-			return
-		end
+	if IsTerminal and IsJunk then
+		return
 	end
 
 	local IsTrashcan = Prompt.Name == "TrashcanPrompt"
@@ -4810,10 +4874,7 @@ Functions.TriggerPrompt = function(Prompt)
 		if OpenedLootWardrobes[Prompt] then
 			return
 		end
-	elseif AutoInteractBlacklist[Prompt.Name]
-		and not (IsTurnstyle and Toggles.AutoTurnstyles and Toggles.AutoTurnstyles.Value)
-		and not (IsPackageDeposit and Toggles.AutoPackageDeposit and Toggles.AutoPackageDeposit.Value)
-	then
+	elseif AutoInteractBlacklist[Prompt.Name] then
 		return
 	end
 
@@ -4862,6 +4923,7 @@ Functions.TriggerPrompt = function(Prompt)
 	if Prompt.Name == "PushPrompt" and Options.AutoInteractIgnoreList.Value["Minecarts"] then return end
 	if (Prompt.Parent.Name == "GoldPile" or Prompt.Parent.Name == "StardustPickup") and Options.AutoInteractIgnoreList.Value["Currency"] then return end
 
+	if Prompt.Parent.Name == "ArchivesStorageBox" then return end
 	if Prompt.Parent.Name == "Bandage" then
 		local BPack = Functions.HasItem("BandagePack")
 		if Humanoid.Health >= Humanoid.MaxHealth and not BPack then return end
@@ -4921,11 +4983,7 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 			local isTurnstyle = Prompt.ObjectText == "Turnstyle" or (Prompt.Parent and Prompt.Parent.Name == "OneWayTwoHandDoor")
 			local isDeposit = Prompt.ObjectText == "Deposit" or Prompt.ActionText == "StorageAdd" or (Prompt.Parent and Prompt.Parent.Name == "ArchivesPackageDeposit")
 			local maxDist = Prompt.MaxActivationDistance
-			if isTurnstyle and Toggles.AutoTurnstyles and Toggles.AutoTurnstyles.Value then
-				maxDist = math.max(maxDist, 12)
-			elseif isDeposit and Toggles.AutoPackageDeposit and Toggles.AutoPackageDeposit.Value then
-				maxDist = math.max(maxDist, 10)
-			end
+
 			if (Distance <= maxDist and Prompt.Enabled) or (Distance <= Prompt.MaxActivationDistance and Prompt.Name == "LongPushPrompt") or (Distance <= Prompt.MaxActivationDistance and Prompt.Name == "BigPropPrompt") then
 				task.spawn(Functions.TriggerPrompt, Prompt)
 			end
