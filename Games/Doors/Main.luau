@@ -952,6 +952,8 @@ Functions.AddESP = function(ESPOptions, RoomBased)
 	if table.find(ESPBlacklist, Object) then
 		return
 	end
+	
+	Functions.RemoveESP(Object)
 
 	if RoomBased then
 		local CurrentRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom"))
@@ -3971,6 +3973,9 @@ Functions.HandleObject = function(Object)
 
 	elseif Name == "PathLights" then
 		local ObjectsToHighlight = {}
+		local PreviousNode = nil
+		local loopAlive = true
+		
 		local PLConn = Object.ChildAdded:Connect(function(Child)
 			table.insert(ObjectsToHighlight, Child)
 		end)
@@ -4014,7 +4019,7 @@ Functions.HandleObject = function(Object)
 		end
 
 		task.spawn(function()
-			while task.wait() do
+			while loopAlive and task.wait() do
 				local Light = table.remove(ObjectsToHighlight, 1)
 				if Light then CreateSeekNode(Light) end
 			end
@@ -4022,7 +4027,10 @@ Functions.HandleObject = function(Object)
 
 		table.insert(Connections, PLConn)
 		Functions.RegisterObject(Objects.PathLights, Object)
-		Object.Destroying:Once(function() PLConn:Disconnect() end)
+		Object.Destroying:Once(function()
+			PLConn:Disconnect()
+			loopAlive = false
+		end)
 	elseif Name == "SeekMovingNewClone" then
 		local Connection = Object.Destroying:Connect(function()
 			for _, Folder in pairs(Objects.PathLights) do
