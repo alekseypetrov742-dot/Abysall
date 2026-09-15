@@ -962,10 +962,11 @@ Globals.PromptContainer.Parent = GetHiddenContainer()
 
 local ESPBlacklist = {}
 
+local RoomESPEntries = {}
+
 Functions.AddESP = function(ESPOptions, RoomBased)
 	local Object = ESPOptions.Object
-
-	if table.find(ESPBlacklist, Object) then
+	if not Object or table.find(ESPBlacklist, Object) then
 		return
 	end
 	
@@ -974,41 +975,36 @@ Functions.AddESP = function(ESPOptions, RoomBased)
 	if RoomBased then
 		local CurrentRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom"))
 		local ObjectRoom = tonumber(Object:GetAttribute("ParentRoom"))
+		RoomESPEntries[Object] = { Options = ESPOptions, Room = ObjectRoom }
 
 		if ObjectRoom == CurrentRoom or (table.find(Objects.Doors, Object) and ObjectRoom == CurrentRoom + 1) then
 			Abysall.ESPLibrary:AddESP(ESPOptions)
 		end
-
-		local RoomConnection = LocalPlayer:GetAttributeChangedSignal("CurrentRoom"):Connect(function()
-			if Abysall.ESPLibrary.ColorTable[Object] then
-				ESPOptions.Color = Abysall.ESPLibrary.ColorTable[Object]
-			end
-
-			local NewCurrentRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom"))
-			local ObjRoom = tonumber(Object:GetAttribute("ParentRoom"))
-
-			if ObjRoom == NewCurrentRoom or (table.find(Objects.Doors, Object) and ObjRoom == NewCurrentRoom + 1) then
-				Abysall.ESPLibrary:AddESP(ESPOptions)
-			else
-				Abysall.ESPLibrary:RemoveESP(Object)
-			end
-		end)
-
-		table.insert(Connections, RoomConnection)
-		ESPConnections[Object] = RoomConnection
-
-		Object.Destroying:Once(function()
-			RoomConnection:Disconnect()
-			if Abysall then
-				Abysall.ESPLibrary:RemoveESP(Object)
-			end
-			local Pos = table.find(Connections, RoomConnection)
-			if Pos then table.remove(Connections, Pos) end
-		end)
 	else
 		Abysall.ESPLibrary:AddESP(ESPOptions)
 	end
 end
+
+-- Centralized single event listener for room-based ESP updates (eliminates thousands of per-object listeners!)
+Connections.CentralRoomESPUpdate = LocalPlayer:GetAttributeChangedSignal("CurrentRoom"):Connect(function()
+	local NewCurrentRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom"))
+	for Object, Entry in RoomESPEntries do
+		if not Object or not Object:IsDescendantOf(Services.Workspace) then
+			RoomESPEntries[Object] = nil
+			Abysall.ESPLibrary:RemoveESP(Object)
+		else
+			if Abysall.ESPLibrary.ColorTable[Object] then
+				Entry.Options.Color = Abysall.ESPLibrary.ColorTable[Object]
+			end
+			local ObjRoom = Entry.Room or tonumber(Object:GetAttribute("ParentRoom"))
+			if ObjRoom == NewCurrentRoom or (table.find(Objects.Doors, Object) and ObjRoom == NewCurrentRoom + 1) then
+				Abysall.ESPLibrary:AddESP(Entry.Options)
+			else
+				Abysall.ESPLibrary:RemoveESP(Object)
+			end
+		end
+	end
+end)
 
 Functions.UpdateHonchoESP = function()
 	local activeBoxIDs = {}
@@ -1032,6 +1028,8 @@ Functions.UpdateHonchoESP = function()
 end
 
 Functions.RemoveESP = function(Object)
+	if not Object then return end
+	RoomESPEntries[Object] = nil
 	local Conn = ESPConnections[Object]
 	if Conn then
 		Conn:Disconnect()
@@ -3799,15 +3797,9 @@ Functions.HandleHidingTransparency = function(Model)
 end
 
 Functions.RegisterObject = function(Array, Object)
-	table.insert(Array, Object)
-	local Connection
-	Connection = Object.Destroying:Connect(function()
-		Connection:Disconnect()
-		local Index = table.find(Array, Object)
-		if Index then
-			table.remove(Array, Index)
-		end
-	end)
+	if not table.find(Array, Object) then
+		table.insert(Array, Object)
+	end
 end
 
 Functions.HandleObject = function(Object)
@@ -4222,15 +4214,8 @@ Functions.HandleObject = function(Object)
 				if desc:IsA("BasePart") then
 					desc.CanCollide = false
 					desc.CanTouch = false
-				end
 			end
 		end
-		Object.DescendantAdded:Connect(function(desc)
-			if Toggles.BypassDrones and Toggles.BypassDrones.Value and desc:IsA("BasePart") then
-				desc.CanCollide = false
-				desc.CanTouch = false
-			end
-		end)
 	elseif Name == "ElectricWater" or Name == "ElectrifiedWater" or Name == "ElectricPuddle" or Name == "WaterHazard"
 		or (Name:find("Puddle") and not Name:find("Blood"))
 		or (Name:find("Electric") and not (Name:find("Key") or Name:find("Breaker") or Name:find("Elevator")))
@@ -4240,12 +4225,14 @@ Functions.HandleObject = function(Object)
 		if Toggles.BypassElectricWater and Toggles.BypassElectricWater.Value then
 			UpdateElectricPuddle(Object, true)
 		end
-		Object.DescendantAdded:Connect(function(desc)
-			if Toggles.BypassElectricWater and Toggles.BypassElectricWater.Value and desc:IsA("BasePart") and desc.Name ~= "AbysallElectricWaterPad" then
-				desc.CanTouch = false
-				desc.CanCollide = false
+		if Toggles.BypassElectricWater and Toggles.BypassElectricWater.Value then
+			for _, desc in Object:GetDescendants() do
+				if desc:IsA("BasePart") and desc.Name ~= "AbysallElectricWaterPad" then
+					desc.CanTouch = false
+					desc.CanCollide = false
+				end
 			end
-		end)
+		end
 	elseif Name == "ArchivesPackageDeposit" then
 		Functions.RegisterObject(Objects.HonchoDeposits, Object)
 		Object:GetAttributeChangedSignal("BoxID"):Connect(function()
@@ -4267,12 +4254,6 @@ Functions.HandleObject = function(Object)
 			if Toggles.NoSlowdownBarriers and Toggles.NoSlowdownBarriers.Value then
 				Object.CanCollide = false
 			end
-			local BarrierConn = Object:GetPropertyChangedSignal("CanCollide"):Connect(function()
-				if Toggles.NoSlowdownBarriers and Toggles.NoSlowdownBarriers.Value and Object.CanCollide then
-					Object.CanCollide = false
-				end
-			end)
-			Object.Destroying:Once(function() BarrierConn:Disconnect() end)
 		end
 	elseif Name == "OneWayTwoHandDoor" then
 		Functions.RegisterObject(Objects.OneWayDoors, Object)
@@ -4694,11 +4675,11 @@ local AllowedInstances = {
 
 Functions.QueueObject = function(Object)
 	local Name = Object.Name
-	local isDrone = Name == "Drones" or Name == "Drone" or Name:find("Drone") or Name:find("Stampede") or Name == "RushHour" or Name == "RunningDrone" or Name == "Runner"
-	local isElectric = Name:find("Electric") or Name:find("Shock") or Name:find("Puddle") or (Name:find("Water") and not (Name:find("Cup") or Name:find("Pump") or Name:find("Cooler"))) or Object:HasTag("CurrentsPuddle")
-	local isBarrier = Name == "ItemOnlyBarrier" or Name:find("ItemOnlyBarrier")
-	if not AllowedInstances[Name] and not isDrone and not isElectric and not isBarrier and Object.ClassName ~= "ProximityPrompt" and Object.Parent ~= CurrentRooms and not ItemNames[Name] then
-		return
+	if not AllowedInstances[Name] and Object.ClassName ~= "ProximityPrompt" and Object.Parent ~= CurrentRooms and not ItemNames[Name] then
+		-- Fast partial checks only for special cases
+		if not (Name:find("Drone") or Name:find("Puddle") or Name:find("Water") or Name:find("Barrier") or Object:HasTag("CurrentsPuddle")) then
+			return
+		end
 	end
 	Functions.HandleObject(Object)
 end
@@ -5240,13 +5221,7 @@ Connections.Cleaner = Services.RunService.Heartbeat:Connect(function()
 			local Object = Array[I]
 			if Object == nil or not Object:IsDescendantOf(Services.Workspace) then
 				table.remove(Array, I)
-				local Conn = ESPConnections[Object]
-				if Conn then
-					Conn:Disconnect()
-					ESPConnections[Object] = nil
-					local Pos = table.find(Connections, Conn)
-					if Pos then table.remove(Connections, Pos) end
-				end
+				Functions.RemoveESP(Object)
 				if FakePrompts[Object] then FakePrompts[Object] = nil end
 			end
 			I -= 1
