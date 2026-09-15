@@ -788,10 +788,26 @@ local EntityDistances = {
 Functions.GetNearestEntity = function(CheckDisabled, List, UseRaycasting)
 	local Nearest = { Distance = math.huge, Object = nil }
 
+	for _, Entity in Objects.Entities do
+		if Entity and Entity.Parent and EntityDistances[Entity.Name] and Entity.PrimaryPart then
+			local EntityData = Entities[Entity.Name]
+			if EntityData and not (List and List[EntityData.Alias]) then
+				local Distance = LocalPlayer:DistanceFromCharacter(Entity.PrimaryPart.Position)
+				if Distance < EntityDistances[Entity.Name] and Distance < Nearest.Distance then
+					if not CheckDisabled or Entity:GetAttribute("Inactive") ~= true then
+						Nearest.Distance = Distance
+						Nearest.Object = Entity
+					end
+				end
+			end
+		end
+	end
+	
+	-- Fallback: also check direct workspace children for entities not yet registered
 	for _, Entity in Services.Workspace:GetChildren() do
 		if Entity and EntityDistances[Entity.Name] and Entity.PrimaryPart then
 			local EntityData = Entities[Entity.Name]
-			if not (List and List[EntityData.Alias]) then
+			if EntityData and not (List and List[EntityData.Alias]) then
 				local Distance = LocalPlayer:DistanceFromCharacter(Entity.PrimaryPart.Position)
 				if Distance < EntityDistances[Entity.Name] and Distance < Nearest.Distance then
 					if not CheckDisabled or Entity:GetAttribute("Inactive") ~= true then
@@ -3456,8 +3472,11 @@ Functions.HandleCharacter = function(NewCharacter)
 	end
 
 	Connections.MainHandler = Services.RunService.RenderStepped:Connect(function()
-		if Services.Workspace:FindFirstChild("Camera") then
-			Camera = Services.Workspace:FindFirstChild("Camera")
+		if not Globals._camCheckTime or tick() - Globals._camCheckTime > 1 then
+			Globals._camCheckTime = tick()
+			if Services.Workspace:FindFirstChild("Camera") then
+				Camera = Services.Workspace:FindFirstChild("Camera")
+			end
 		end
 
 		if Toggles.SpeedBoostToggle.Value then
@@ -3468,10 +3487,13 @@ Functions.HandleCharacter = function(NewCharacter)
 			CollisionPartClone.Massless = true
 		end
 
-		Globals.IsEyes    = Services.Workspace:FindFirstChild("Eyes") ~= nil or Services.Workspace:FindFirstChild("Lookman") ~= nil
-		Globals.IsLookman = Services.Workspace:FindFirstChild("BackdoorLookman") ~= nil
+		if not Globals._eyesCheckTime or tick() - Globals._eyesCheckTime > 0.25 then
+			Globals._eyesCheckTime = tick()
+			Globals.IsEyes    = Services.Workspace:FindFirstChild("Eyes") ~= nil or Services.Workspace:FindFirstChild("Lookman") ~= nil
+			Globals.IsLookman = Services.Workspace:FindFirstChild("BackdoorLookman") ~= nil
+		end
 
-		if Toggles.AmbientToggle.Value then
+		if Toggles.AmbientToggle.Value and Services.Lighting.Ambient ~= Options.AmbientColor.Value then
 			Services.TweenService:Create(Services.Lighting, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), { Ambient = Options.AmbientColor.Value }):Play()
 		end
 
@@ -3500,12 +3522,20 @@ Functions.HandleCharacter = function(NewCharacter)
 			RootPart.CanCollide = false
 		end
 
-		for _, Part in Character:GetChildren() do
-			if Part:IsA("BasePart") then Part.CanCollide = false end
+		if not Globals._charParts or tick() - (Globals._charPartsTime or 0) > 2 then
+			Globals._charParts = {}
+			for _, Part in Character:GetChildren() do
+				if Part:IsA("BasePart") then table.insert(Globals._charParts, Part) end
+			end
+			Globals._charPartsTime = tick()
+		end
+		for _, Part in Globals._charParts do
+			Part.CanCollide = false
 		end
 
 		if LocalPlayer:GetAttribute("Alive") == true then
-			Services.SoundService:WaitForChild("Main").Volume = 1
+			if not Globals._mainSound then Globals._mainSound = Services.SoundService:FindFirstChild("Main") end
+			if Globals._mainSound then Globals._mainSound.Volume = 1 end
 		end
 
 		local NearEntity = Functions.GetNearestEntity()
@@ -3541,9 +3571,11 @@ Functions.HandleCharacter = function(NewCharacter)
 			RootPart.CanCollide = not (Toggles.NoclipToggle.Value or Toggles.VelocityManipulationToggle.Value)
 		else
 			Collision.CanCollide = false
-			if Collision:FindFirstChild("CollisionCrouch") then Collision.CollisionCrouch.CanCollide = false end
+			if not Globals._collCrouch then Globals._collCrouch = Collision:FindFirstChild("CollisionCrouch") end
+			if not Globals._cloneCrouch then Globals._cloneCrouch = CollisionClone:FindFirstChild("CollisionCrouch") end
+			if Globals._collCrouch then Globals._collCrouch.CanCollide = false end
 
-			if CollisionClone:FindFirstChild("CollisionCrouch") then
+			if Globals._cloneCrouch then
 				local IsCrouch = Functions.IsCrouching()
 				CollisionClone.CanCollide = not (Toggles.NoclipToggle.Value or Toggles.VelocityManipulationToggle.Value or IsCrouch)
 				CollisionClone.CollisionCrouch.CanCollide = not (Toggles.NoclipToggle.Value or Toggles.VelocityManipulationToggle.Value or not IsCrouch)
@@ -3551,8 +3583,12 @@ Functions.HandleCharacter = function(NewCharacter)
 				RootPart.CanCollide = not (Toggles.NoclipToggle.Value or Toggles.VelocityManipulationToggle.Value)
 			end
 
-			if Character:FindFirstChild("LowerTorso") and Character.LowerTorso:FindFirstChild("Root") and Globals.OriginalC1 then
-				Character.LowerTorso.Root.C1 = Globals.OriginalC1
+			if Globals.OriginalC1 then
+				if not Globals._lowerRoot then
+					local lt = Character:FindFirstChild("LowerTorso")
+					Globals._lowerRoot = lt and lt:FindFirstChild("Root")
+				end
+				if Globals._lowerRoot then Globals._lowerRoot.C1 = Globals.OriginalC1 end
 			end
 
 			local SpoofOffset = (Toggles.PositionSpoof.Value and HasDanger) and 200 or 0
@@ -3579,14 +3615,14 @@ Functions.HandleCharacter = function(NewCharacter)
 			Collision.CanTouch = (SpoofOffset == 0)
 			CollisionPart.CanTouch = (SpoofOffset == 0)
 
-			if Collision:FindFirstChild("CollisionCrouch") and CollisionClone:FindFirstChild("CollisionCrouch") then
+			if Globals._collCrouch and Globals._cloneCrouch then
 				local CrouchY = -0.982
 				Collision.CollisionCrouch.Position = RootPart.Position + Vector3.new(0, CrouchY + SpoofOffset, 0)
 				Collision.CollisionCrouch.CanTouch = (SpoofOffset == 0)
 				CollisionClone.CollisionCrouch.CollisionGroup = Collision.CollisionCrouch.CollisionGroup
 			end
-			if CollisionClone:FindFirstChild("CollisionCrouch") then
-				CollisionClone.CollisionCrouch.Position = RootPart.Position + Vector3.new(0, -0.982, 0)
+			if Globals._cloneCrouch then
+				Globals._cloneCrouch.Position = RootPart.Position + Vector3.new(0, -0.982, 0)
 			end
 		end
 
@@ -5211,8 +5247,26 @@ Connections.Cleaner = Services.RunService.Heartbeat:Connect(function()
 					local Pos = table.find(Connections, Conn)
 					if Pos then table.remove(Connections, Pos) end
 				end
+				if FakePrompts[Object] then FakePrompts[Object] = nil end
 			end
 			I -= 1
+		end
+	end
+	
+	-- Clean stale ESPBlacklist entries (linear search gets slower over time)
+	local BI = #ESPBlacklist
+	while BI >= 1 do
+		local Obj = ESPBlacklist[BI]
+		if Obj == nil or not Obj:IsDescendantOf(Services.Workspace) then
+			table.remove(ESPBlacklist, BI)
+		end
+		BI -= 1
+	end
+	
+	-- Clean stale PromptCooldown entries
+	for Prompt in PromptCooldown do
+		if not Prompt or not Prompt:IsDescendantOf(game) then
+			PromptCooldown[Prompt] = nil
 		end
 	end
 end)
