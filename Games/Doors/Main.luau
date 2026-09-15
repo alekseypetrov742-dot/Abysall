@@ -4214,6 +4214,7 @@ Functions.HandleObject = function(Object)
 				if desc:IsA("BasePart") then
 					desc.CanCollide = false
 					desc.CanTouch = false
+				end
 			end
 		end
 	elseif Name == "ElectricWater" or Name == "ElectrifiedWater" or Name == "ElectricPuddle" or Name == "WaterHazard"
