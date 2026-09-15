@@ -50,7 +50,9 @@ local Objects = {
 	SeekBridges = {},
 	PathLights = {},
 	HonchoDeposits = {},
-	HonchoBoxes = {}
+	HonchoBoxes = {},
+	Coolers = {},
+	Drones = {}
 }
 
 Globals.IncompatibleMessage = "Your executor doesn't support this feature."
@@ -1239,9 +1241,18 @@ Toggles.AutoInteractToggle:AddKeyPicker("AutoInteractKeybind", {
 })
 Groupboxes.Self_Automation:AddDropdown("AutoInteractIgnoreList", {
 	Text = "Ignore List",
-	Values = { "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks" },
-	Default = { "Glitch Fragments", "Jeff Items", "Dropped Items" },
+	Values = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks", "Storage Boxes" },
+	Default = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items", "Storage Boxes" },
 	Multi = true, AllowNull = true
+})
+Groupboxes.Self_Automation:AddToggle("AutoInteractIgnoreSeats", {
+	Text = "Ignore Seats", Default = true, Tooltip = "Prevents Auto Interact from sitting on chairs and benches."
+})
+Groupboxes.Self_Automation:AddToggle("DisablePushChairsToggle", {
+	Text = "Disable Push Chairs", Default = true, Tooltip = "Disables the push prompt on office chairs and prevents pushing them."
+})
+Groupboxes.Self_Automation:AddToggle("AutoInteractLockers", {
+	Text = "Loot Lockers", Default = true, Tooltip = "Automatically loots unbroken lockers and wardrobes (coins/loot) once."
 })
 Groupboxes.Self_Automation:AddDivider()
 Groupboxes.Self_Automation:AddToggle("AutoClosetToggle", {
@@ -1302,6 +1313,7 @@ Groupboxes.Self_Misc:AddButton({
 
 Groupboxes.Exploits_Bypass = Tabs.Exploits:AddLeftGroupbox("Bypass")
 Groupboxes.Exploits_Bypass:AddToggle("BypassGiggle",         { Text = "Bypass Giggle",           Default = false, Tooltip = "Prevents 'Giggle' from attacking you." })
+Groupboxes.Exploits_Bypass:AddToggle("BypassDrones",         { Text = "Bypass Drones",           Default = false, Tooltip = "Immunity to drones, runners and drone stampedes." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassDupe",           { Text = "Bypass Dupe",             Default = false, Tooltip = "Prevents you from open 'Dupe' fake doors." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassEyes",           { Text = "Bypass Eyes",             Default = false, Tooltip = "Prevents 'Eyes' from hurting you." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassLookman",        { Text = "Bypass Lookman",          Default = false, Tooltip = "Prevents 'Lookman' from hurting you." })
@@ -1321,6 +1333,39 @@ Toggles.BypassGiggle:OnChanged(function(Value)
 		end
 	end
 end)
+Toggles.BypassDrones:OnChanged(function(Value)
+	for _, Object in Objects.Drones do
+		if Object and Object.Parent then
+			if Object:IsA("BasePart") then
+				Object.CanCollide = not Value
+				Object.CanTouch = not Value
+			end
+			for _, desc in Object:GetDescendants() do
+				if desc:IsA("BasePart") then
+					desc.CanCollide = not Value
+					desc.CanTouch = not Value
+				end
+			end
+		end
+	end
+	local DronesFolder = Services.Workspace:FindFirstChild("Drones")
+	if DronesFolder then
+		for _, desc in DronesFolder:GetDescendants() do
+			if desc:IsA("BasePart") then
+				desc.CanCollide = not Value
+				desc.CanTouch = not Value
+			end
+		end
+	end
+	if Value and Character then
+		if Character:GetAttribute("Animating") == true and not Globals.Sliding then Character:SetAttribute("Animating", false) end
+		if Character:GetAttribute("RestrictMovement") == true then Character:SetAttribute("RestrictMovement", false) end
+		local HRP = Character:FindFirstChild("HumanoidRootPart")
+		local kb = HRP and HRP:FindFirstChild("KnockbackVelo")
+		if kb then kb:Destroy() end
+	end
+end)
+
 Toggles.BypassDupe:OnChanged(function(Value)
 	for _, Object in Objects.Entities do
 		if Object.Name == "DoorFake" or Object.Name == "FakeDoor" then
@@ -1747,6 +1792,7 @@ Groupboxes.Visuals_Entities:AddDropdown("EntityList", {
 	Multi = true, AllowNull = true
 })
 Groupboxes.Visuals_Entities:AddToggle("NotifyEntities",    { Text = "Notify Entities",    Default = false, Tooltip = "Sends a notification when an entity spawns." })
+Groupboxes.Visuals_Entities:AddToggle("NotifyCoolersToggle",          { Text = "Notify Water Coolers", Default = false, Tooltip = "Sends a notification when a water cooler spawns." })
 Groupboxes.Visuals_Entities:AddDivider()
 
 local ItemsToNotify = {}
@@ -1908,6 +1954,25 @@ local EntityESPLabels = {
 local NodeEntities = {
 	Rush = true, Ambush = true, Eyes = true, Blitz = true, Lookman = true, ["A-60"] = true, ["A-120"] = true, Sally = true, ["Jeff The Killer"] = true, Monument = true, ["AR0xMBUSH"] = true, ["RNIUSHCG=="] = true
 }
+
+Groupboxes.Visuals_ESP_Toggles:AddToggle("CoolerESPToggle",     { Text = "Water Coolers", Default = false, Tooltip = "Highlights water coolers." })
+Toggles.CoolerESPToggle:AddColorPicker("CoolerESPColor",       { Text = "Water Coolers", Default = Color3.fromRGB(0, 200, 255), Transparency = 0 })
+Toggles.CoolerESPToggle:OnChanged(function(Value)
+	for _, Object in Objects.Coolers do
+		if Value then
+			Functions.AddESP({ Object = Object, Text = "Water Cooler", Color = Options.CoolerESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil)
+		else
+			Functions.RemoveESP(Object)
+		end
+	end
+end)
+Options.CoolerESPColor:OnChanged(function(Value)
+	for _, Object in Objects.Coolers do
+		if Toggles.CoolerESPToggle.Value and ESPConnections[Object] then
+			Abysall.ESPLibrary:UpdateObjectColor(Object, Value)
+		end
+	end
+end)
 
 Groupboxes.Visuals_ESP_Toggles:AddToggle("HonchoBoxESPToggle", { Text = "Honcho Boxes", Default = false, Tooltip = "Highlights the correct storage boxes during the Honcho minigame." })
 Toggles.HonchoBoxESPToggle:AddColorPicker("HonchoBoxESPColor", { Text = "Honcho Boxes", Default = Color3.fromRGB(255, 128, 0), Transparency = 0 })
@@ -2642,6 +2707,10 @@ if Functions.CheckCompatability({"hookmetamethod", "newcclosure", "getnamecallme
 				return
 			end
 
+			if (Self.Name == "WalkedInto" or Self.Name == "ShoulderChecked" or Self.Name:find("Drone") or Self.Name:find("Stampede") or Self.Name == "Trample" or Self.Name == "Trampled" or Self.Name == "Stomp" or Self.Name == "Knockback" or Self.Name == "Push") and Method == "FireServer" and Toggles.BypassDrones and Toggles.BypassDrones.Value then
+				return
+			end
+
 			if Self.Name == "MotorReplication" and Method == "FireServer" then
 				local DoBypass = (Toggles.BypassEyes.Value and Globals.IsEyes) or (Toggles.BypassLookman.Value and Globals.IsLookman)
 				if DoBypass then
@@ -3160,6 +3229,18 @@ Functions.HandleCharacter = function(NewCharacter)
 		CollisionClone.CollisionGroup = Collision.CollisionGroup
 		CollisionClone.Position = RootPart.Position + Vector3.new(0, Toggles.PositionSpoof.Value and 1.75 or 0.18, 0)
 
+		if Toggles.BypassDrones and Toggles.BypassDrones.Value and Character then
+			if Character:GetAttribute("Animating") == true and not Globals.Sliding then
+				Character:SetAttribute("Animating", false)
+			end
+			if Character:GetAttribute("RestrictMovement") == true then
+				Character:SetAttribute("RestrictMovement", false)
+			end
+			local HRP = Character:FindFirstChild("HumanoidRootPart")
+			local kb = HRP and HRP:FindFirstChild("KnockbackVelo")
+			if kb then kb:Destroy() end
+		end
+
 		if Toggles.VelocityManipulationToggle.Value and Options.VelocityManipulationMode.Value == "Velocity" then
 			Globals.ManipulateBody.Parent = RootPart
 			Globals.ManipulateBody.Velocity = RootPart.CFrame.LookVector * 2.25
@@ -3590,6 +3671,33 @@ Functions.HandleObject = function(Object)
 		table.insert(Objects.HonchoBoxes, Object)
 		if Toggles.HonchoBoxESPToggle and Toggles.HonchoBoxESPToggle.Value then
 			Functions.UpdateHonchoESP()
+		end
+	elseif Name == "ArchivesWaterCooler" or (Name:find("WaterCooler") or Name:find("Water_Cooler")) then
+		table.insert(Objects.Coolers, Object)
+		if Toggles.CoolerESPToggle and Toggles.CoolerESPToggle.Value then
+			Functions.AddESP({ Object = Object, Text = "Water Cooler", Color = Options.CoolerESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil)
+		end
+		if Toggles.NotifyCoolersToggle and Toggles.NotifyCoolersToggle.Value and Object.Parent and Object.Parent.Name ~= "Drops" then
+			local Pos = Object.PrimaryPart and Object.PrimaryPart.Position or (Object:FindFirstChildWhichIsA("BasePart") and Object:FindFirstChildWhichIsA("BasePart").Position)
+			if Pos and Toggles.NotifyItemsShowDistance and Toggles.NotifyItemsShowDistance.Value then
+				Functions.Notify({ Title = "Water Cooler has spawned.", Body = "It is '" .. math.round(LocalPlayer:DistanceFromCharacter(Pos)) .. "' studs away from you." })
+			else
+				Functions.Notify({ Title = "Water Cooler has spawned." })
+			end
+		end
+	elseif (Name == "Drones" or Name == "Drone" or Name:find("Drone") or Name:find("Stampede") or Name == "RushHour" or Name == "RunningDrone") and not Name:find("PaperPlane") then
+		table.insert(Objects.Drones, Object)
+		if Toggles.BypassDrones and Toggles.BypassDrones.Value then
+			if Object:IsA("BasePart") then
+				Object.CanCollide = false
+				Object.CanTouch = false
+			end
+			for _, desc in Object:GetDescendants() do
+				if desc:IsA("BasePart") then
+					desc.CanCollide = false
+					desc.CanTouch = false
+				end
+			end
 		end
 	elseif Name == "Bridge" then
 		for _, Child in Object:GetChildren() do
@@ -4074,7 +4182,8 @@ local AllowedInstances = {
 	GardenGateButton=true, LotusPetalPickup=true, VineGuillotine=true, LiveEntityBramble=true,
 	RiftSpawn=true, ElevatorBreaker=true, RunnerNodes=true, PathLights=true, DuckBoard=true,
 	Padlock=true, EyestalkEndCutscene=true, MinecartRig=true, SeekMovingNewClone=true,
-	ArchivesStorageBox=true, ArchivesPackageDeposit=true
+	ArchivesStorageBox=true, ArchivesPackageDeposit=true,
+	ArchivesWaterCooler=true, Drones=true, Drone=true, DroneStampede=true, Stampede=true, RushHour=true, RunningDrone=true, Runner=true
 }
 
 Functions.QueueObject = function(Object)
@@ -4231,10 +4340,110 @@ local AutoInteractBlacklist = {
 
 local TriggerDebounce = false
 
+local OpenedLootWardrobes = {}
+
 Functions.TriggerPrompt = function(Prompt)
 	if not Prompt or not Prompt.Parent then return end
-	if Prompt.Parent.Name == "ArchivesStorageBox" or Prompt.Parent.Name == "StorageBox" then return end
-	if AutoInteractBlacklist[Prompt.Name] then return end
+	if TriggerDebounce then return end
+
+	if Prompt.Name == "ManualOpenPrompt"
+		or (Prompt.Parent and (Prompt.Parent.Name == "DespawningDoor" or Prompt.Parent.Name:find("LeafWall") or Prompt.Parent.Name:find("Leafwall") or Prompt.Parent.Name:find("FlowerDoor")))
+		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name == "DespawningDoor" or Prompt.Parent.Parent.Name:find("LeafWall")))
+		or Prompt:FindFirstAncestor("DespawningDoor")
+		or Prompt:FindFirstAncestor("LeafWall")
+		or Prompt:FindFirstAncestor("Leafwall")
+	then
+		return
+	end
+
+	local IsStorageBox = Prompt.ObjectText == "Storage Box"
+		or (Prompt.Parent and (Prompt.Parent.Name == "ArchivesStorageBox" or Prompt.Parent.Name:find("StorageBox")))
+		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name == "ArchivesStorageBox" or Prompt.Parent.Parent.Name:find("StorageBox")))
+	if IsStorageBox and (Options.AutoInteractIgnoreList.Value["Storage Boxes"] ~= false) then
+		return
+	end
+
+	local IsJunk = Options.AutoInteractIgnoreList and Options.AutoInteractIgnoreList.Value["Junk"]
+
+	local IsSeatPrompt = Prompt.Name == "SeatPrompt" or Prompt.ActionText == "Seat" or (Prompt.Parent and (Prompt.Parent:IsA("Seat") or Prompt.Parent:IsA("VehicleSeat") or Prompt.Parent.Name == "SeatPart"))
+	if IsSeatPrompt and (IsJunk or (Toggles.AutoInteractIgnoreSeats and Toggles.AutoInteractIgnoreSeats.Value)) then
+		return
+	end
+
+	local IsPushPrompt = Prompt.Name == "CartPrompt" or Prompt.ActionText == "Push"
+	if IsPushPrompt and (IsJunk or (Toggles.DisablePushChairsToggle and Toggles.DisablePushChairsToggle.Value)) then
+		return
+	end
+
+	local IsPrinter = Prompt.Name == "LidPrompt"
+		or Prompt.ObjectText == "Lid"
+		or (Prompt.Parent and (Prompt.Parent.Name == "Lid" or Prompt.Parent.Name == "PrintedPaper" or Prompt.Parent.Name:find("Printer")))
+		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Printer"))
+	if IsPrinter and IsJunk then
+		return
+	end
+
+	local IsTerminal = Prompt.ObjectText == "Anchor"
+		or (Prompt.Parent and Prompt.Parent.Name == "ArchivesTerminal")
+		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name == "ArchivesTerminal")
+	if IsTerminal and IsJunk then
+		return
+	end
+
+	local IsTrashcan = Prompt.Name == "TrashcanPrompt"
+		or Prompt.ObjectText == "Trashcan"
+		or (Prompt.Parent and Prompt.Parent.Name:find("Trashcan"))
+		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Trashcan"))
+	if IsTrashcan and IsJunk then
+		return
+	end
+
+	local IsFishTank = Prompt.Name == "FlakesPrompt"
+		or Prompt.ObjectText == "Fih Tank"
+		or (Prompt.Parent and Prompt.Parent.Name:find("Fih"))
+		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Fih"))
+	if IsFishTank and IsJunk then
+		return
+	end
+
+	local IsVendingMachine = (Prompt.ObjectText and (Prompt.ObjectText:find("Vending") or Prompt.ObjectText:find("Shakelight")))
+		or (Prompt.Parent and (Prompt.Parent.Name:find("Vending") or Prompt.Parent.Name:find("Shakelight")))
+		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name:find("Vending") or Prompt.Parent.Parent.Name:find("Shakelight")))
+		or (Prompt.ActionText and (Prompt.ActionText:find("10 Gold") or Prompt.ActionText:find("10 Coins") or (Prompt.ActionText:find("Purchase") and Prompt.ObjectText:find("Flashlight"))))
+	if IsVendingMachine and IsJunk then
+		return
+	end
+
+	local IsHidePrompt = Prompt.Name == "HidePrompt"
+		or Prompt.ActionText == "Hide"
+		or (Prompt.ObjectText and Prompt.ObjectText:find("Bed"))
+
+	local ModelAncestor = Prompt:FindFirstAncestorOfClass("Model")
+	local ModelName = ModelAncestor and ModelAncestor.Name or ""
+	local ParentName = Prompt.Parent and Prompt.Parent.Name or ""
+	local ObjText = Prompt.ObjectText or ""
+
+	local IsLockerOrWardrobe = (ObjText == "Wardrobe" or ObjText == "Locker" or ObjText == "Cabinet" or ObjText == "Drawer" or ObjText == "Desk")
+		or ParentName:find("Locker") or ParentName:find("Wardrobe") or ParentName:find("Cabinet") or ParentName:find("Drawer") or ParentName:find("Desk") or ParentName:find("Toolshed")
+		or ModelName:find("Locker") or ModelName:find("Wardrobe") or ModelName:find("Cabinet") or ModelName:find("Drawer") or ModelName:find("Desk") or ModelName:find("Toolshed")
+		or (Prompt.ActionText == "Open" and not ParentName:find("Door") and not ModelName:find("Door"))
+
+	local IsBrokenLocker = ParentName:find("Broken") or ModelName:find("Broken")
+
+	if IsHidePrompt then
+		return
+	end
+
+	if IsLockerOrWardrobe then
+		if IsBrokenLocker then return end
+		if Prompt.ActionText == "Close" then return end
+		if not (Toggles.AutoInteractLockers and Toggles.AutoInteractLockers.Value) then return end
+		if OpenedLootWardrobes[Prompt] then
+			return
+		end
+	elseif AutoInteractBlacklist[Prompt.Name] then
+		return
+	end
 	if not Prompt or not Prompt.Parent then return end
 	if TriggerDebounce then return end
 
@@ -4312,6 +4521,10 @@ Functions.TriggerPrompt = function(Prompt)
 	if Prompt.Parent.Name == "AlarmClock" and Functions.HasItem("AlarmClock") then return end
 	if Prompt.Parent.Name == "KeyObtainFake" or Prompt.Parent.Name == "TithingPlate" then return end
 
+	if IsLockerOrWardrobe then
+		OpenedLootWardrobes[Prompt] = true
+	end
+
 	Functions.FirePrompt(Prompt)
 	TriggerDebounce = true
 	if Floor == "OldHotel" then task.wait() end
@@ -4322,6 +4535,7 @@ Globals.LastAutoInteractFire = tick()
 Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 	local Active = Toggles.AutoInteractToggle.Value or Options.AutoInteractKeybind:GetState()
     if not Active then return end
+    if Character and Character:GetAttribute("Hiding") == true then return end
     if tick() - Globals.LastAutoInteractFire < 1/60 then return end
 
 	for _, Prompt in Objects.Prompts do
