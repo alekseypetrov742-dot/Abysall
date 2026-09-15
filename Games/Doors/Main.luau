@@ -2559,7 +2559,11 @@ task.spawn(function()
 		local MyPos = Root.Position
 
 		local InRoom = false
-		if (MyPos - RoomPivot).Magnitude < 180 then
+		local CurrRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom"))
+		local FMNRoomNum = tonumber(FMNRoom.Name)
+		if CurrRoom and FMNRoomNum and CurrRoom == FMNRoomNum then
+			InRoom = true
+		elseif (MyPos - RoomPivot).Magnitude < 180 then
 			InRoom = true
 		elseif Entrance and (MyPos - Entrance.Position).Magnitude < 150 then
 			InRoom = true
