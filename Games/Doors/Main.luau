@@ -227,7 +227,9 @@ local ItemNames = {
 	["WaitingTicket"]     = "Waiting Ticket",
 	["Ticket"]            = "Ticket",
 	["PaperCup"]          = "Paper Cup",
-	["HoneyPot"]          = "Honey Pot"
+	["HoneyPot"]          = "Honey Pot",
+	["SecretCD"]          = "Disc",
+	["Disc"]              = "Disc"
 }
 
 local CutsceneNames = {
@@ -1241,8 +1243,8 @@ Toggles.AutoInteractToggle:AddKeyPicker("AutoInteractKeybind", {
 })
 Groupboxes.Self_Automation:AddDropdown("AutoInteractIgnoreList", {
 	Text = "Ignore List",
-	Values = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks", "Storage Boxes" },
-	Default = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items", "Storage Boxes" },
+	Values = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items", "Currency", "Minecarts", "Locks", "Storage Boxes", "Laptops" },
+	Default = { "Junk", "Glitch Fragments", "Jeff Items", "Dropped Items", "Storage Boxes", "Laptops" },
 	Multi = true, AllowNull = true
 })
 Groupboxes.Self_Automation:AddToggle("AutoInteractIgnoreSeats", {
@@ -2222,6 +2224,11 @@ Groupboxes.Floors_Automation:AddToggle("RoomsAutoWalkSpoofFootsteps", {
     Text = "Spoof Footsteps", Default = false, Tooltip = "Makes it appear as if your character is walking normally.",
     Disabled = not Functions.CheckCompatability({"hookmetamethod", "newcclosure", "getnamecallmethod"}), DisabledTooltip = Globals.IncompatibleMessage
 })
+Groupboxes.Floors_Automation:AddDivider()
+Groupboxes.Floors_Automation:AddToggle("ForgetMeNotHelper", {
+	Text = "Forget-Me-Not Helper", Default = true,
+	Tooltip = "Detects anomalies in Archives Forget-Me-Not room and tells you whether to go Forward or Backward."
+})
 
 Toggles.RoomsAutoWalk:OnChanged(function()
 	for _, Object in Globals.RoomsNodesFolder:GetChildren() do
@@ -2396,10 +2403,101 @@ Connections.RoomsAutoWalkHandler = Services.RunService.Heartbeat:Connect(functio
 	Globals.RoomsAutoWalkActive = false
 end)
 
+Functions.HandleForgetMeNot = function(Room)
+	if not Room then return end
+	local RawName = Room:GetAttribute("RawName")
+	local HasVineDoors = Room:FindFirstChild("ForgetMeNotVineDoors")
+	if not (RawName == "Archives_ForgetMeNotRoom" or HasVineDoors) then return end
+
+	task.wait(0.4)
+	if not Room.Parent then return end
+
+	local Assets = Room:FindFirstChild("Assets")
+	local Deletable = Assets and Assets:FindFirstChild("Deletable")
+
+	local VineDoors = Room:FindFirstChild("ForgetMeNotVineDoors")
+	if VineDoors and Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value then
+		Functions.AddESP({ Object = VineDoors, Text = "Forget-Me-Not Door", Color = Color3.fromRGB(140, 0, 255) })
+	end
+
+	if not Deletable then return end
+
+	local ExpectedCounts = {
+		["Tram-Archives"] = 1,
+		["WetFloorSign"] = 1,
+		["Pillars"] = 1,
+		["ArchivesCeilingLightNoPrefab"] = 3,
+		["ArchivesWaitingSeats"] = 4,
+		["PottedPlant_Archives_Large"] = 4,
+	}
+
+	local function EvaluateRoom()
+		if not Deletable.Parent then return end
+		local CurrentCounts = {}
+		for _, c in ipairs(Deletable:GetChildren()) do
+			CurrentCounts[c.Name] = (CurrentCounts[c.Name] or 0) + 1
+		end
+
+		local Anomalies = {}
+		for name, expCount in pairs(ExpectedCounts) do
+			local curr = CurrentCounts[name] or 0
+			if curr < expCount then
+				table.insert(Anomalies, string.format("Пропал: %s (%d/%d)", name, curr, expCount))
+			elseif curr > expCount then
+				table.insert(Anomalies, string.format("Лишний: %s (%d/%d)", name, curr, expCount))
+			end
+		end
+
+		for name in pairs(CurrentCounts) do
+			if not ExpectedCounts[name] then
+				table.insert(Anomalies, string.format("Чужеродный объект: %s", name))
+			end
+		end
+
+		if #Anomalies > 0 then
+			local Reason = table.concat(Anomalies, ", ")
+			if Toggles.ForgetMeNotHelper and Toggles.ForgetMeNotHelper.Value then
+				Functions.Caption(string.format("<font color='#ff3333'><b>[Forget-Me-Not] ⚠️ АНОМАЛИЯ: %s ➔ ИДИТЕ НАЗАД!</b></font>", Reason), true)
+				Functions.Notify({
+					Title = "Forget-Me-Not: АНОМАЛИЯ!",
+					Body = Reason .. "\n➔ РАЗВОРАЧИВАЙТЕСЬ НАЗАД!",
+					Time = 6
+				})
+			end
+		else
+			if Toggles.ForgetMeNotHelper and Toggles.ForgetMeNotHelper.Value then
+				Functions.Caption("<font color='#33ff33'><b>[Forget-Me-Not] ✅ ВСЁ ЧИСТО (Аномалий нет) ➔ ИДИТЕ ВПЕРЁД!</b></font>", true)
+				Functions.Notify({
+					Title = "Forget-Me-Not: ЧИСТО!",
+					Body = "Аномалий нет (все 14 объектов на месте).\n➔ ИДИТЕ ВПЕРЁД!",
+					Time = 6
+				})
+			end
+		end
+	end
+
+	EvaluateRoom()
+
+	local c1 = Deletable.ChildRemoved:Connect(function()
+		task.wait(0.1)
+		EvaluateRoom()
+	end)
+	local c2 = Deletable.ChildAdded:Connect(function()
+		task.wait(0.1)
+		EvaluateRoom()
+	end)
+	Room.Destroying:Once(function()
+		c1:Disconnect()
+		c2:Disconnect()
+	end)
+end
+
 Connections.RoomsHandler = CurrentRooms.ChildAdded:Connect(function(Room)
 	for _, Object in Globals.RoomsNodesFolder:GetChildren() do
 		if Object.Name == "StuckPart" then Object:Destroy() end
 	end
+
+	task.spawn(Functions.HandleForgetMeNot, Room)
 
 	if Room:GetAttribute("RawName") and string.find(Room:GetAttribute("RawName"), "Eyestalk") then
         local PreviousNode = nil
@@ -2566,6 +2664,11 @@ Groupboxes.Floors_Visuals:AddToggle("ShowEyestalkPathToggle", {
 Toggles.ShowEyestalkPathToggle:AddColorPicker("ShowEyestalkPathColor", { Text = "Eyestalk Path", Default = Color3.fromRGB(0, 255, 0), Transparency = 0 })
 Toggles.ShowEyestalkPathToggle:OnChanged(function(V) UpdateBeamVisibility(Objects.EyestalkHighlights, "ShowEyestalkPathColor", V) end)
 Options.ShowEyestalkPathColor:OnChanged(function(V)  UpdateBeamColor(Objects.EyestalkHighlights, V) end)
+Groupboxes.Floors_Visuals:AddDivider()
+Groupboxes.Floors_Visuals:AddToggle("ForgetMeNotESP", {
+	Text = "Forget-Me-Not ESP", Default = true,
+	Tooltip = "Highlights Forget-Me-Not vine doors, flowers, and detected anomalies."
+})
 
 Groupboxes.Floors_Bypass = Tabs.Floors:AddLeftGroupbox("Bypass")
 Groupboxes.Floors_Bypass:AddToggle("RemoveSeekTrigger", {
@@ -4093,6 +4196,12 @@ Functions.HandleObject = function(Object)
 				Object.Destroying:Once(function()
 					FakePrompt:Destroy()
 					FPEnabledConn:Disconnect()
+					local idx = table.find(Objects.Prompts, FakePrompt)
+					if idx then table.remove(Objects.Prompts, idx) end
+				end)
+				FakePrompt.Destroying:Once(function()
+					local idx = table.find(Objects.Prompts, FakePrompt)
+					if idx then table.remove(Objects.Prompts, idx) end
 				end)
 				table.insert(Connections, FPEnabledConn)
 				table.insert(Objects.Prompts, FakePrompt)
@@ -4102,6 +4211,10 @@ Functions.HandleObject = function(Object)
 				FakePrompt.Enabled = Object.Enabled
 			end
 		end
+		Object.Destroying:Once(function()
+			local idx = table.find(Objects.Prompts, Object)
+			if idx then table.remove(Objects.Prompts, idx) end
+		end)
 		table.insert(Objects.Prompts, Object)
 	elseif Name == "Padlock" then
 		Connections.PadlockConnection = Services.RunService.Heartbeat:Connect(function()
@@ -4494,6 +4607,16 @@ Functions.TriggerPrompt = function(Prompt)
 		or Prompt.Parent.Name == "ElevatorBreaker"
 		or (Prompt.Parent.Parent and Prompt.Parent.Parent.Name == "IndustrialGate"))
 	then return end
+
+	-- Ignore Forget-Me-Not Vine Doors and flower prompts (prevents damage/jumpscares)
+	if Prompt.Name == "EntryPrompt" or (Prompt.Parent and Prompt.Parent.Name == "ForgetMeNotVineDoors")
+		or Prompt:FindFirstAncestor("ForgetMeNotVineDoors") or Prompt:FindFirstAncestor("ForgetMeNots")
+	then return end
+
+	-- Ignore Laptops if selected in ignore list
+	if Options.AutoInteractIgnoreList.Value["Laptops"]
+		and (Prompt.Name == "LaptopPrompt" or (Prompt.Parent and Prompt.Parent.Name == "SecretLaptop") or Prompt:FindFirstAncestor("SecretLaptop"))
+	then return end
 	if Prompt.Name == "ActivateEventPrompt" and (Prompt.Parent.Name == "Padlock" or Prompt.Parent.Name == "MinesAnchor") then return end
 	if Prompt.Parent.Name == "LeverForGate" and Prompt:GetAttribute("Interactions") then return end
 	if Prompt.Parent.Parent and (Prompt.Parent.Parent.Name == "DoorFake" or Prompt.Parent.Parent.Name == "FakeDoor") then return end
@@ -4543,7 +4666,7 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 	local Active = Toggles.AutoInteractToggle.Value or Options.AutoInteractKeybind:GetState()
 	if not Active then return end
 	if Character and Character:GetAttribute("Hiding") == true then return end
-	-- Throttle to ~16 FPS to prevent CPU hogging and lag
+	-- Throttle to ~16 FPS to prevent CPU hogging and micro-freezes
 	if tick() - Globals.LastAutoInteractFire < 0.06 then return end
 	Globals.LastAutoInteractFire = tick()
 
@@ -4554,21 +4677,40 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 	local CurrRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom"))
 	local Count = 0
 
-	for _, Prompt in Objects.Prompts do
-		if not Prompt or not Prompt.Parent then continue end
+	-- Iterate backwards: cleans up dead prompts in-place to prevent table bloat across hundreds of rooms
+	for i = #Objects.Prompts, 1, -1 do
+		local Prompt = Objects.Prompts[i]
+		if not Prompt or not Prompt.Parent or not Prompt:IsDescendantOf(workspace) then
+			table.remove(Objects.Prompts, i)
+			continue
+		end
 
-		-- 1. Fast check: skip disabled prompts immediately
-		local IsSpecialPush = Prompt.Name == "LongPushPrompt" or Prompt.Name == "BigPropPrompt"
-		if not Prompt.Enabled and not IsSpecialPush then continue end
-
-		-- 2. Fast check: room filter
+		-- 1. Fast check: room filter
 		local PRoom = tonumber(Prompt:GetAttribute("ParentRoom"))
 		if PRoom and CurrRoom and PRoom ~= CurrRoom then continue end
 
-		-- 3. Fast check: cooldown on this specific prompt
-		if tick() - (PromptCooldowns[Prompt] or 0) < 0.3 then continue end
+		-- 2. Fast check: skip disabled prompts immediately
+		local IsSpecialPush = Prompt.Name == "LongPushPrompt" or Prompt.Name == "BigPropPrompt"
+		if not Prompt.Enabled and not IsSpecialPush then continue end
 
-		-- 4. Calculate distance with minimal overhead
+		-- 3. Fast check: ignore Forget-Me-Not vine doors and flowers (prevents damage)
+		if Prompt.Name == "EntryPrompt" or (Prompt.Parent and Prompt.Parent.Name == "ForgetMeNotVineDoors")
+			or Prompt:FindFirstAncestor("ForgetMeNotVineDoors") or Prompt:FindFirstAncestor("ForgetMeNots")
+		then
+			continue
+		end
+
+		-- 4. Fast check: ignore Laptops
+		if Options.AutoInteractIgnoreList.Value["Laptops"]
+			and (Prompt.Name == "LaptopPrompt" or (Prompt.Parent and Prompt.Parent.Name == "SecretLaptop") or Prompt:FindFirstAncestor("SecretLaptop"))
+		then
+			continue
+		end
+
+		-- 5. Fast check: cooldown on this specific prompt
+		if tick() - (PromptCooldowns[Prompt] or 0) < 0.35 then continue end
+
+		-- 6. Calculate squared distance with zero vector allocations
 		local PromptParent = Prompt.Parent
 		local TargetPos
 		if PromptParent:IsA("BasePart") then
@@ -4576,18 +4718,18 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 		elseif PromptParent:IsA("Model") then
 			local Prim = PromptParent.PrimaryPart
 			TargetPos = Prim and Prim.Position or (PromptParent:FindFirstChildWhichIsA("BasePart") and PromptParent:FindFirstChildWhichIsA("BasePart").Position)
-			if not TargetPos then
-				pcall(function() TargetPos = PromptParent:GetPivot().Position end)
-			end
 		end
 
 		if TargetPos then
-			local Dist = (TargetPos - MyPos).Magnitude
-			if Dist <= Prompt.MaxActivationDistance then
+			local dx = TargetPos.X - MyPos.X
+			local dy = TargetPos.Y - MyPos.Y
+			local dz = TargetPos.Z - MyPos.Z
+			local DistSq = dx * dx + dy * dy + dz * dz
+			local MaxDist = Prompt.MaxActivationDistance
+			if DistSq <= (MaxDist * MaxDist) then
 				Functions.TriggerPrompt(Prompt)
 				Count += 1
-				-- Process at most 3 prompts per tick to avoid spamming the server and anticheat
-				if Count >= 3 then break end
+				if Count >= 2 then break end
 			end
 		end
 	end
