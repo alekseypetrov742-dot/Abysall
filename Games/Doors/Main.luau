@@ -232,7 +232,8 @@ local ItemNames = {
 	["LunchBox"]          = "Lunchbox",
 	["WaitingTicket"]     = "Waiting Ticket",
 	["Ticket"]            = "Ticket",
-	["PaperCup"]          = "Paper Cup"
+	["PaperCup"]          = "Paper Cup",
+	["HoneyPot"]          = "Honey Pot"
 }
 
 local CutsceneNames = {
