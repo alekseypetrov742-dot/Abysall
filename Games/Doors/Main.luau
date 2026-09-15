@@ -4338,13 +4338,13 @@ local AutoInteractBlacklist = {
 	ToolEventPrompt=true, Prompt=true, PropPrompt=true
 }
 
-local TriggerDebounce = false
-
-local OpenedLootWardrobes = {}
+local PromptCooldowns  = setmetatable({}, { __mode = "k" })
+local PromptAttempts   = setmetatable({}, { __mode = "k" })
+local OpenedContainers = setmetatable({}, { __mode = "k" })
+local GlobalInteractDebounce = 0
 
 Functions.TriggerPrompt = function(Prompt)
 	if not Prompt or not Prompt.Parent then return end
-	if TriggerDebounce then return end
 
 	if Prompt.Name == "ManualOpenPrompt"
 		or (Prompt.Parent and (Prompt.Parent.Name == "DespawningDoor" or Prompt.Parent.Name:find("LeafWall") or Prompt.Parent.Name:find("Leafwall") or Prompt.Parent.Name:find("FlowerDoor")))
@@ -4436,16 +4436,26 @@ Functions.TriggerPrompt = function(Prompt)
 
 	if IsLockerOrWardrobe then
 		if IsBrokenLocker then return end
-		if Prompt.ActionText == "Close" then return end
+		if Prompt.ActionText == "Close" then
+			OpenedContainers[Prompt] = true
+			return
+		end
 		if not (Toggles.AutoInteractLockers and Toggles.AutoInteractLockers.Value) then return end
-		if OpenedLootWardrobes[Prompt] then
+		-- If marked as opened but ActionText is still Open, anticheat blocked it! Allow retry!
+		if OpenedContainers[Prompt] and Prompt.ActionText ~= "Open" then
+			return
+		end
+		-- Rate limit retries per prompt to give server time to respond
+		if tick() - (PromptCooldowns[Prompt] or 0) < 0.35 then
+			return
+		end
+		if (PromptAttempts[Prompt] or 0) >= 8 then
 			return
 		end
 	elseif AutoInteractBlacklist[Prompt.Name] then
 		return
 	end
 	if not Prompt or not Prompt.Parent then return end
-	if TriggerDebounce then return end
 
 	local ParentItem = Functions.HasItem(Prompt.Parent.Name)
 	if ParentItem and ParentItem:GetAttribute("Durability") and ParentItem:GetAttribute("DurabilityMax")
@@ -4521,39 +4531,66 @@ Functions.TriggerPrompt = function(Prompt)
 	if Prompt.Parent.Name == "AlarmClock" and Functions.HasItem("AlarmClock") then return end
 	if Prompt.Parent.Name == "KeyObtainFake" or Prompt.Parent.Name == "TithingPlate" then return end
 
-	if IsLockerOrWardrobe then
-		OpenedLootWardrobes[Prompt] = true
-	end
+	PromptCooldowns[Prompt] = tick()
+	PromptAttempts[Prompt] = (PromptAttempts[Prompt] or 0) + 1
+	GlobalInteractDebounce = tick()
 
 	Functions.FirePrompt(Prompt)
-	TriggerDebounce = true
-	if Floor == "OldHotel" then task.wait() end
-	TriggerDebounce = false
 end
 
 Globals.LastAutoInteractFire = tick()
 Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 	local Active = Toggles.AutoInteractToggle.Value or Options.AutoInteractKeybind:GetState()
-    if not Active then return end
-    if Character and Character:GetAttribute("Hiding") == true then return end
-    if tick() - Globals.LastAutoInteractFire < 1/60 then return end
+	if not Active then return end
+	if Character and Character:GetAttribute("Hiding") == true then return end
+	-- Throttle to ~16 FPS to prevent CPU hogging and lag
+	if tick() - Globals.LastAutoInteractFire < 0.06 then return end
+	Globals.LastAutoInteractFire = tick()
+
+	local Root = Character and (Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("Collision") or Character:FindFirstChild("Head"))
+	if not Root then return end
+	local MyPos = Root.Position
+
+	local CurrRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom"))
+	local Count = 0
 
 	for _, Prompt in Objects.Prompts do
-        if Prompt:GetAttribute("ParentRoom") and tonumber(Prompt:GetAttribute("ParentRoom")) ~= tonumber(LocalPlayer:GetAttribute("CurrentRoom")) then continue end
+		if not Prompt or not Prompt.Parent then continue end
 
-		if Prompt.Parent and (Prompt.Parent:IsA("BasePart") or Prompt.Parent:IsA("Model")) then
-			local Distance
-			if Prompt.Parent:IsA("BasePart") then
-				Distance = LocalPlayer:DistanceFromCharacter(Prompt.Parent.Position)
-			else
-				Distance = LocalPlayer:DistanceFromCharacter(Prompt.Parent:GetPivot().Position)
+		-- 1. Fast check: skip disabled prompts immediately
+		local IsSpecialPush = Prompt.Name == "LongPushPrompt" or Prompt.Name == "BigPropPrompt"
+		if not Prompt.Enabled and not IsSpecialPush then continue end
+
+		-- 2. Fast check: room filter
+		local PRoom = tonumber(Prompt:GetAttribute("ParentRoom"))
+		if PRoom and CurrRoom and PRoom ~= CurrRoom then continue end
+
+		-- 3. Fast check: cooldown on this specific prompt
+		if tick() - (PromptCooldowns[Prompt] or 0) < 0.3 then continue end
+
+		-- 4. Calculate distance with minimal overhead
+		local PromptParent = Prompt.Parent
+		local TargetPos
+		if PromptParent:IsA("BasePart") then
+			TargetPos = PromptParent.Position
+		elseif PromptParent:IsA("Model") then
+			local Prim = PromptParent.PrimaryPart
+			TargetPos = Prim and Prim.Position or (PromptParent:FindFirstChildWhichIsA("BasePart") and PromptParent:FindFirstChildWhichIsA("BasePart").Position)
+			if not TargetPos then
+				pcall(function() TargetPos = PromptParent:GetPivot().Position end)
 			end
-			if Distance <= Prompt.MaxActivationDistance and Prompt.Enabled or Distance <= Prompt.MaxActivationDistance and Prompt.Name == "LongPushPrompt" or Distance <= Prompt.MaxActivationDistance and Prompt.Name == "BigPropPrompt" then
-				task.spawn(Functions.TriggerPrompt, Prompt)
+		end
+
+		if TargetPos then
+			local Dist = (TargetPos - MyPos).Magnitude
+			if Dist <= Prompt.MaxActivationDistance then
+				Functions.TriggerPrompt(Prompt)
+				Count += 1
+				-- Process at most 3 prompts per tick to avoid spamming the server and anticheat
+				if Count >= 3 then break end
 			end
 		end
 	end
-    Globals.LastAutoInteractFire = tick()
 end)
 
 Connections.InfiniteItemsHandler = Services.ProximityPromptService.PromptTriggered:Connect(function(Object)
