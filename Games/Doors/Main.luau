@@ -1662,6 +1662,15 @@ Groupboxes.Exploits_BypassRight:AddToggle("CrouchSpoof", {
 Toggles.PositionSpoof:OnChanged(function(Value)
 	if not Value then
 		Globals.SpoofOffset = 0
+		local welds = {}
+		for _, joint in pairs(Character:GetDescendants()) do
+			if joint:IsA("WeldConstraint") then
+				if joint.Part0 == Collision or joint.Part1 == Collision or joint.Part0 == CollisionPart or joint.Part1 == CollisionPart then
+					table.insert(welds, joint)
+					joint.Enabled = false
+				end
+			end
+		end
 		if Collision then
 			Collision.CanTouch = true
 			Collision.Position = RootPart.Position + Vector3.new(0, 0.18, 0)
@@ -1669,6 +1678,9 @@ Toggles.PositionSpoof:OnChanged(function(Value)
 		if CollisionPart then
 			CollisionPart.CanTouch = true
 			CollisionPart.Position = RootPart.Position + Vector3.new(0, 0.18, 0)
+		end
+		for _, joint in pairs(welds) do
+			joint.Enabled = true
 		end
 		if Collision and Collision:FindFirstChild("CollisionCrouch") then
 			Collision.CollisionCrouch.CanTouch = true
@@ -3082,15 +3094,6 @@ Functions.HandleCharacter = function(NewCharacter)
 
 	Collision = NewCharacter:WaitForChild("Collision")
 	CollisionPart  = NewCharacter:FindFirstChild("CollisionPart") or NewCharacter:FindFirstChild("Collision")
-	
-	for _, joint in pairs(NewCharacter:GetDescendants()) do
-		if joint:IsA("JointInstance") or joint:IsA("WeldConstraint") then
-			if joint.Part0 == Collision or joint.Part1 == Collision or joint.Part0 == CollisionPart or joint.Part1 == CollisionPart then
-				joint:Destroy()
-			end
-		end
-	end
-
 	CollisionClone = Collision:Clone()
 	CollisionClone.Parent = NewCharacter
 	CollisionClone.Name = "CollisionClone"
@@ -3510,7 +3513,20 @@ Functions.HandleCharacter = function(NewCharacter)
 		if Floor == "OldHotel" or Floor == "Fools" then
 			local SpoofOffset = (Toggles.PositionSpoof.Value and NearEntity and 200) or (NearFigure and 200) or 0
 			Globals.SpoofOffset = SpoofOffset
-			Collision.Position = RootPart.Position + Vector3.new(0, SpoofOffset, 0)
+			local targetPos = RootPart.Position + Vector3.new(0, SpoofOffset, 0)
+			local welds = {}
+			for _, joint in pairs(Character:GetDescendants()) do
+				if joint:IsA("WeldConstraint") then
+					if joint.Part0 == Collision or joint.Part1 == Collision then
+						table.insert(welds, joint)
+						joint.Enabled = false
+					end
+				end
+			end
+			Collision.Position = targetPos
+			for _, joint in pairs(welds) do
+				joint.Enabled = true
+			end
 			Collision.CanCollide = false
 			if Floor == "Fools" then
 				Collision.CollisionCrouch.CanCollide = false
@@ -3536,8 +3552,21 @@ Functions.HandleCharacter = function(NewCharacter)
 			local SpoofOffset = (Toggles.PositionSpoof.Value and HasDanger) and 200 or 0
 			Globals.SpoofOffset = SpoofOffset
 
-			Collision.Position     = RootPart.Position + Vector3.new(0, 0.18 + SpoofOffset, 0)
-			CollisionPart.Position = RootPart.Position + Vector3.new(0, 0.18 + SpoofOffset, 0)
+			local targetPos = RootPart.Position + Vector3.new(0, 0.18 + SpoofOffset, 0)
+			local welds = {}
+			for _, joint in pairs(Character:GetDescendants()) do
+				if joint:IsA("WeldConstraint") then
+					if joint.Part0 == Collision or joint.Part1 == Collision or joint.Part0 == CollisionPart or joint.Part1 == CollisionPart then
+						table.insert(welds, joint)
+						joint.Enabled = false
+					end
+				end
+			end
+			Collision.Position = targetPos
+			if CollisionPart then CollisionPart.Position = targetPos end
+			for _, joint in pairs(welds) do
+				joint.Enabled = true
+			end
 			Collision.CanTouch = (SpoofOffset == 0)
 			CollisionPart.CanTouch = (SpoofOffset == 0)
 
@@ -5292,8 +5321,20 @@ Library:OnUnload(function()
 	Humanoid.HipHeight  = 2.367
 
 	local BaseY = 0.18
+	local welds = {}
+	for _, joint in pairs(Character:GetDescendants()) do
+		if joint:IsA("WeldConstraint") then
+			if joint.Part0 == Collision or joint.Part1 == Collision or joint.Part0 == CollisionPart or joint.Part1 == CollisionPart then
+				table.insert(welds, joint)
+				joint.Enabled = false
+			end
+		end
+	end
 	Collision.Position          = RootPart.Position + Vector3.new(0, BaseY, 0)
 	CollisionPart.Position      = RootPart.Position + Vector3.new(0, BaseY, 0)
+	for _, joint in pairs(welds) do
+		joint.Enabled = true
+	end
 	CollisionPartClone.Position = RootPart.Position + Vector3.new(0, BaseY, 0)
 
 	if Character:FindFirstChild("LowerTorso") and Character.LowerTorso:FindFirstChild("Root") then
