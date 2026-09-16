@@ -2467,10 +2467,10 @@ local function GetOrCreateFMN_HUD()
 
 	local Frame = Instance.new("Frame")
 	Frame.Name = "MainFrame"
-	Frame.Size = UDim2.new(0, 460, 0, 74)
-	Frame.Position = UDim2.new(0.5, -230, 0, 24)
+	Frame.Size = UDim2.new(0, 540, 0, 82)
+	Frame.Position = UDim2.new(0.5, -270, 0, 20)
 	Frame.BackgroundColor3 = Color3.fromRGB(16, 16, 16)
-	Frame.BackgroundTransparency = 0.12
+	Frame.BackgroundTransparency = 0.1
 	Frame.BorderSizePixel = 0
 	Frame.Parent = Gui
 
@@ -2484,7 +2484,7 @@ local function GetOrCreateFMN_HUD()
 
 	local Title = Instance.new("TextLabel", Frame)
 	Title.Name = "Title"
-	Title.Size = UDim2.new(1, 0, 0, 20)
+	Title.Size = UDim2.new(1, 0, 0, 18)
 	Title.Position = UDim2.new(0, 0, 0, 4)
 	Title.BackgroundTransparency = 1
 	Title.Font = Enum.Font.GothamBold
@@ -2495,7 +2495,7 @@ local function GetOrCreateFMN_HUD()
 	local Status = Instance.new("TextLabel", Frame)
 	Status.Name = "Status"
 	Status.Size = UDim2.new(1, -20, 0, 24)
-	Status.Position = UDim2.new(0, 10, 0, 24)
+	Status.Position = UDim2.new(0, 10, 0, 22)
 	Status.BackgroundTransparency = 1
 	Status.Font = Enum.Font.GothamBold
 	Status.TextSize = 15
@@ -2504,17 +2504,20 @@ local function GetOrCreateFMN_HUD()
 
 	local Detail = Instance.new("TextLabel", Frame)
 	Detail.Name = "Detail"
-	Detail.Size = UDim2.new(1, -20, 0, 20)
+	Detail.Size = UDim2.new(1, -20, 0, 28)
 	Detail.Position = UDim2.new(0, 10, 0, 48)
 	Detail.BackgroundTransparency = 1
 	Detail.Font = Enum.Font.Gotham
 	Detail.TextSize = 12
-	Detail.TextColor3 = Color3.fromRGB(200, 200, 200)
+	Detail.TextColor3 = Color3.fromRGB(215, 215, 215)
+	Detail.TextWrapped = true
 	Detail.Text = "Анализ объектов..."
 
 	Globals.FMN_HUD = Gui
 	return Gui
 end
+
+Globals.FMN_LastAnomalousObjects = {}
 
 Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor, AnomalousObjects)
 	local Gui = GetOrCreateFMN_HUD()
@@ -2524,6 +2527,8 @@ Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor, Ano
 	local Stroke = Frame:FindFirstChild("BorderStroke")
 	local Status = Frame:FindFirstChild("Status")
 	local Detail = Frame:FindFirstChild("Detail")
+
+	local newTrackedAnoms = {}
 
 	if State == "Scanning" then
 		if Stroke then Stroke.Color = Color3.fromRGB(255, 200, 50) end
@@ -2551,6 +2556,7 @@ Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor, Ano
 			if AnomalousObjects then
 				for _, anom in ipairs(AnomalousObjects) do
 					if anom.Object then
+						newTrackedAnoms[anom.Object] = true
 						Functions.SetOrUpdateESP(anom.Object, anom.Label or "⚠️ АНОМАЛИЯ", Color3.fromRGB(255, 50, 50))
 					end
 				end
@@ -2574,6 +2580,17 @@ Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor, Ano
 			end
 		end
 	end
+
+	-- Clean up ESP on objects that are no longer anomalous
+	if Globals.FMN_LastAnomalousObjects then
+		for obj in pairs(Globals.FMN_LastAnomalousObjects) do
+			if not newTrackedAnoms[obj] and obj ~= ForwardDoor and obj ~= BackwardDoor then
+				Functions.RemoveESP(obj)
+				if Globals.FMN_ESP_Tracked then Globals.FMN_ESP_Tracked[obj] = nil end
+			end
+		end
+	end
+	Globals.FMN_LastAnomalousObjects = newTrackedAnoms
 end
 
 -- Continuous Forget-Me-Not multi-factor anomaly evaluator & cycle tracker
@@ -2860,13 +2877,36 @@ task.spawn(function()
 			end
 		end
 
-		-- Factor 5: Detail checks on plants and lights
+		-- Factor 5: Detail checks on colors, palette swaps, plants, and lights
 		for _, c in ipairs(DelChildren) do
-			if c.Name == "PottedPlant_Archives_Large" and not c:FindFirstChild("Leaves") then
-				table.insert(Anomalies, "У растения отсутствуют листья")
-				table.insert(AnomalousObjects, { Object = c, Label = "⚠️ РАСТЕНИЕ БЕЗ ЛИСТЬЕВ" })
-			end
-			if c.Name == "ArchivesCeilingLightNoPrefab" then
+			if c.Name == "WetFloorSign" then
+				local base = c:FindFirstChild("Base")
+				if base and (base.Color.B > base.Color.R or base.Color.B > base.Color.G or base.Color.R < 0.45) then
+					table.insert(Anomalies, "Цвет таблички изменён (не жёлтый)")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ ТАБЛИЧКИ ИЗМЕНЁН" })
+				end
+			elseif c.Name == "PottedPlant_Archives_Large" then
+				local leaves = c:FindFirstChild("Leaves")
+				if not leaves then
+					table.insert(Anomalies, "У растения отсутствуют листья")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ РАСТЕНИЕ БЕЗ ЛИСТЬЕВ" })
+				elseif leaves.Color.G <= leaves.Color.R or leaves.Color.G <= leaves.Color.B then
+					table.insert(Anomalies, "Цвет листьев изменён (не зелёный)")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ ЛИСТЬЕВ ИЗМЕНЁН" })
+				end
+			elseif c.Name == "ArchivesWaitingSeats" then
+				local plastic = c:FindFirstChild("Plastic", true)
+				if plastic and (plastic.Color.B <= plastic.Color.G or plastic.Color.B <= plastic.Color.R) then
+					table.insert(Anomalies, "Цвет сидений изменён (не синий)")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ СИДЕНИЙ ИЗМЕНЁН" })
+				end
+			elseif c.Name == "Tram-Archives" then
+				local tb = c:FindFirstChild("TramBase1") or c:FindFirstChild("TramBase2")
+				if tb and tb.Color.G > tb.Color.B then
+					table.insert(Anomalies, "Цвет поезда изменён (зелёный)")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ ПОЕЗДА ИЗМЕНЁН" })
+				end
+			elseif c.Name == "ArchivesCeilingLightNoPrefab" then
 				local pl = c:FindFirstChildWhichIsA("PointLight", true)
 				if pl and pl.Color.R > 0.85 and pl.Color.G < 0.2 and pl.Color.B < 0.2 then
 					table.insert(Anomalies, "Красный свет в лампе")
@@ -2875,7 +2915,31 @@ task.spawn(function()
 			end
 		end
 
-		-- Factor 5: Room/Door attributes
+		-- Factor 6: Direct comparison with BaseRoom (Differential Check against original template)
+		if BaseRoom and BaseRoom ~= ActiveRoom then
+			local BaseAssets = BaseRoom:FindFirstChild("Assets")
+			local BaseDeletable = BaseAssets and BaseAssets:FindFirstChild("Deletable")
+			if BaseDeletable then
+				local baseDelChildren = BaseDeletable:GetChildren()
+				if #baseDelChildren > 0 and #DelChildren ~= #baseDelChildren then
+					table.insert(Anomalies, string.format("Количество объектов отличается от оригинала (%d != %d)", #DelChildren, #baseDelChildren))
+				end
+				local baseSign = BaseDeletable:FindFirstChild("WetFloorSign")
+				local curSign = Deletable:FindFirstChild("WetFloorSign")
+				if baseSign and curSign then
+					local bPart = baseSign:FindFirstChild("Base")
+					local cPart = curSign:FindFirstChild("Base")
+					if bPart and cPart and math.abs(bPart.Color.B - cPart.Color.B) > 0.15 then
+						if not table.find(Anomalies, "Цвет таблички изменён (не жёлтый)") then
+							table.insert(Anomalies, "Цвет таблички отличается от оригинала")
+							table.insert(AnomalousObjects, { Object = curSign, Label = "⚠️ ОТЛИЧИЕ ОТ ОРИГИНАЛА" })
+						end
+					end
+				end
+			end
+		end
+
+		-- Factor 7: Room/Door attributes
 		if ActiveRoom:GetAttribute("Anomaly") == true or (BaseRoom and BaseRoom:GetAttribute("Anomaly") == true) then
 			table.insert(Anomalies, "Флаг аномалии комнаты")
 		end
@@ -2884,7 +2948,7 @@ task.spawn(function()
 		end
 
 		if #Anomalies > 0 then
-			Functions.UpdateFMN_HUD("Anomaly", table.concat(Anomalies, ", "), ForwardDoor, BackwardDoor, AnomalousObjects)
+			Functions.UpdateFMN_HUD("Anomaly", table.concat(Anomalies, " • "), ForwardDoor, BackwardDoor, AnomalousObjects)
 		else
 			Functions.UpdateFMN_HUD("Clean", "Все 14 объектов в норме (аномалий нет)", ForwardDoor, BackwardDoor)
 		end
