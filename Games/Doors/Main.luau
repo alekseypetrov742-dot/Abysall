@@ -2477,44 +2477,45 @@ Functions.UpdateFMN_HUD = function(HasAnomaly, Reason, FMNRoom)
 	local Status = Frame:FindFirstChild("Status")
 	local Detail = Frame:FindFirstChild("Detail")
 
+	local Entrance = FMNRoom and FMNRoom:FindFirstChild("RoomEntrance")
+	local VineDoors = FMNRoom and FMNRoom:FindFirstChild("ForgetMeNotVineDoors")
+
 	if HasAnomaly then
-		if Stroke then Stroke.Color = Color3.fromRGB(255, 55, 55) end
+		if Stroke then Stroke.Color = Color3.fromRGB(255, 45, 45) end
 		if Status then
-			Status.TextColor3 = Color3.fromRGB(255, 75, 75)
-			Status.Text = "⚠️ АНОМАЛИЯ ➔ РАЗВОРАЧИВАЙТЕСЬ НАЗАД!"
+			Status.TextColor3 = Color3.fromRGB(255, 65, 65)
+			Status.Text = "⚠️ АНОМАЛИЯ! ➔ РАЗВОРАЧИВАЙТЕСЬ НАЗАД"
 		end
-		if Detail then Detail.Text = Reason end
+		if Detail then Detail.Text = Reason or "Обнаружено несоответствие!" end
+
 		if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value and FMNRoom then
-			local Entrance = FMNRoom:FindFirstChild("RoomEntrance")
 			if Entrance then
-				Functions.AddESP({ Object = Entrance, Text = "НАЗАД (ПРАВИЛЬНО)", Color = Color3.fromRGB(50, 255, 50) })
+				Functions.AddESP({ Object = Entrance, Text = "НАЗАД (ВЕРНЫЙ ПУТЬ)", Color = Color3.fromRGB(50, 255, 50) })
 			end
-			local VineDoors = FMNRoom:FindFirstChild("ForgetMeNotVineDoors")
 			if VineDoors then
-				Functions.AddESP({ Object = VineDoors, Text = "ВПЕРЁД (ОПАСНО: АНОМАЛИЯ)", Color = Color3.fromRGB(255, 50, 50) })
+				Functions.AddESP({ Object = VineDoors, Text = "ВПЕРЁД (ОПАСНО: АНОМАЛИЯ)", Color = Color3.fromRGB(255, 45, 45) })
 			end
 		end
 	else
-		if Stroke then Stroke.Color = Color3.fromRGB(55, 255, 55) end
+		if Stroke then Stroke.Color = Color3.fromRGB(45, 255, 45) end
 		if Status then
-			Status.TextColor3 = Color3.fromRGB(75, 255, 75)
-			Status.Text = "✅ ВСЁ ЧИСТО ➔ ИДИТЕ ВПЕРЁД!"
+			Status.TextColor3 = Color3.fromRGB(65, 255, 65)
+			Status.Text = "✅ ВСЁ ЧИСТО! ➔ ИДИТЕ ВПЕРЁД (В ЦВЕТОЧНУЮ ДВЕРЬ)"
 		end
-		if Detail then Detail.Text = "Аномалий нет (все 14 предметов на месте)" end
+		if Detail then Detail.Text = "Все 14 объектов и геометрия в норме (аномалий нет)" end
+
 		if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value and FMNRoom then
-			local VineDoors = FMNRoom:FindFirstChild("ForgetMeNotVineDoors")
 			if VineDoors then
-				Functions.AddESP({ Object = VineDoors, Text = "ВПЕРЁД (ПРАВИЛЬНО)", Color = Color3.fromRGB(50, 255, 50) })
+				Functions.AddESP({ Object = VineDoors, Text = "ВПЕРЁД (ВЕРНЫЙ ПУТЬ)", Color = Color3.fromRGB(50, 255, 50) })
 			end
-			local Entrance = FMNRoom:FindFirstChild("RoomEntrance")
 			if Entrance then
-				Functions.AddESP({ Object = Entrance, Text = "НАЗАД (НЕВЕРНО)", Color = Color3.fromRGB(255, 50, 50) })
+				Functions.AddESP({ Object = Entrance, Text = "НАЗАД (НЕВЕРНО: ЧИСТАЯ КОМНАТА)", Color = Color3.fromRGB(255, 45, 45) })
 			end
 		end
 	end
 end
 
--- Continuous Forget-Me-Not loop watcher: runs every 0.25s while player is in the room (handles teleports/loops)
+-- Continuous Forget-Me-Not multi-factor anomaly evaluator & cycle tracker
 task.spawn(function()
 	local ExpectedCounts = {
 		["Tram-Archives"] = 1,
@@ -2525,14 +2526,16 @@ task.spawn(function()
 		["PottedPlant_Archives_Large"] = 4,
 	}
 
-	while task.wait(0.25) do
+	local LastPlayerPosition = nil
+
+	while task.wait(0.2) do
 		if not Toggles.ForgetMeNotHelper or not Toggles.ForgetMeNotHelper.Value then
 			if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
 			continue
 		end
 
 		local Char = LocalPlayer.Character
-		local Root = Char and (Char:FindFirstChild("HumanoidRootPart") or Char:FindFirstChild("Head"))
+		local Root = Char and (Char:FindFirstChild("HumanoidRootPart") or Char:FindFirstChild("Collision") or Char:FindFirstChild("Head"))
 		if not Root then
 			if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
 			continue
@@ -2555,19 +2558,19 @@ task.spawn(function()
 
 		local Entrance = FMNRoom:FindFirstChild("RoomEntrance")
 		local VineDoors = FMNRoom:FindFirstChild("ForgetMeNotVineDoors")
-		local RoomPivot = FMNRoom:GetPivot().Position
 		local MyPos = Root.Position
 
+		-- Generous room boundary check: ensures HUD stays active across all teleport cycles
 		local InRoom = false
 		local CurrRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom"))
 		local FMNRoomNum = tonumber(FMNRoom.Name)
-		if CurrRoom and FMNRoomNum and CurrRoom == FMNRoomNum then
+		if CurrRoom and FMNRoomNum and (CurrRoom == FMNRoomNum or CurrRoom == FMNRoomNum + 1 or CurrRoom == FMNRoomNum - 1) then
 			InRoom = true
-		elseif (MyPos - RoomPivot).Magnitude < 180 then
+		elseif Entrance and (MyPos - Entrance.Position).Magnitude < 320 then
 			InRoom = true
-		elseif Entrance and (MyPos - Entrance.Position).Magnitude < 150 then
+		elseif VineDoors and (MyPos - VineDoors:GetPivot().Position).Magnitude < 320 then
 			InRoom = true
-		elseif VineDoors and (MyPos - VineDoors:GetPivot().Position).Magnitude < 150 then
+		elseif (MyPos - FMNRoom:GetPivot().Position).Magnitude < 350 then
 			InRoom = true
 		end
 
@@ -2576,9 +2579,24 @@ task.spawn(function()
 			continue
 		end
 
+		-- Teleport detection: When the player passes a door and gets teleported back to Entrance
+		if LastPlayerPosition and Entrance then
+			local DistToEnt = (MyPos - Entrance.Position).Magnitude
+			local OldDistToEnt = (LastPlayerPosition - Entrance.Position).Magnitude
+			if DistToEnt < 30 and OldDistToEnt > 65 then
+				-- Player just looped/teleported! Wait for room assets to settle
+				task.wait(0.25)
+			end
+		end
+		LastPlayerPosition = MyPos
+
 		local Assets = FMNRoom:FindFirstChild("Assets")
 		local Deletable = Assets and Assets:FindFirstChild("Deletable")
+		local Fixed = Assets and Assets:FindFirstChild("Fixed")
 
+		local Anomalies = {}
+
+		-- Check 1: Object counts in Deletable
 		local CurrentCounts = {}
 		if Deletable then
 			for _, c in ipairs(Deletable:GetChildren()) do
@@ -2586,7 +2604,6 @@ task.spawn(function()
 			end
 		end
 
-		local Anomalies = {}
 		for name, expCount in pairs(ExpectedCounts) do
 			local curr = CurrentCounts[name] or 0
 			if curr < expCount then
@@ -2598,6 +2615,41 @@ task.spawn(function()
 		for name in pairs(CurrentCounts) do
 			if not ExpectedCounts[name] then
 				table.insert(Anomalies, string.format("Чужеродный объект: %s", name))
+			end
+		end
+
+		-- Check 2: Physical anomalies (glitched train, displaced pillars or plants)
+		if Deletable then
+			local Tram = Deletable:FindFirstChild("Tram-Archives")
+			if Tram and Tram:IsA("Model") then
+				local TramPivot = Tram:GetPivot().Position
+				if math.abs(TramPivot.Y - 7192.78) > 4 or Tram:GetAttribute("Glitched") == true then
+					table.insert(Anomalies, "Трамвай смещён / застрял в стене")
+				end
+			end
+
+			local Pillar = Deletable:FindFirstChild("Pillars")
+			if Pillar and Pillar:IsA("Model") then
+				local PillarPivot = Pillar:GetPivot().Position
+				if math.abs(PillarPivot.Y - 7195.5) > 3 then
+					table.insert(Anomalies, "Колонны смещены")
+				end
+			end
+		end
+
+		-- Check 3: Room-level or VineDoor attributes
+		if FMNRoom:GetAttribute("Anomaly") == true or FMNRoom:GetAttribute("IsAnomaly") == true then
+			table.insert(Anomalies, "Флаг аномалии комнаты")
+		end
+		if VineDoors and (VineDoors:GetAttribute("Anomaly") == true or VineDoors:GetAttribute("IsAnomaly") == true) then
+			table.insert(Anomalies, "Флаг аномалии дверей")
+		end
+
+		-- Check 4: Lighting & Sign anomalies
+		if Fixed then
+			local MetroBoard = Fixed:FindFirstChild("LargeMetroBoard")
+			if MetroBoard and (MetroBoard:GetAttribute("Glitch") or MetroBoard:GetAttribute("Anomaly")) then
+				table.insert(Anomalies, "Искажение табло метро")
 			end
 		end
 
@@ -2615,6 +2667,10 @@ Functions.HandleForgetMeNot = function(Room)
 		local VineDoors = Room:FindFirstChild("ForgetMeNotVineDoors")
 		if VineDoors then
 			Functions.AddESP({ Object = VineDoors, Text = "Forget-Me-Not Door", Color = Color3.fromRGB(140, 0, 255) })
+		end
+		local Entrance = Room:FindFirstChild("RoomEntrance")
+		if Entrance then
+			Functions.AddESP({ Object = Entrance, Text = "Forget-Me-Not Entrance", Color = Color3.fromRGB(50, 200, 50) })
 		end
 	end
 end
@@ -4602,7 +4658,7 @@ end
 local AutoInteractBlacklist = {
 	HidePrompt=true, RiftPrompt=true, StarRiftPrompt=true, InteractPrompt=true, ClimbPrompt=true,
 	DonatePrompt=true, DialoguePrompt=true, RevivePrompt=true, EnterPrompt=true, AnimatePrompt=true,
-	ToolEventPrompt=true, Prompt=true, PropPrompt=true
+	ToolEventPrompt=true, Prompt=true, PropPrompt=true, EntryPrompt=true, LaptopPrompt=true
 }
 
 local PromptCooldowns  = setmetatable({}, { __mode = "k" })
@@ -4610,219 +4666,263 @@ local PromptAttempts   = setmetatable({}, { __mode = "k" })
 local OpenedContainers = setmetatable({}, { __mode = "k" })
 local GlobalInteractDebounce = 0
 
+-- High-speed Inventory Cache: avoids hundreds of C++ FindFirstChild calls during prompt loops
+local InventoryCache = {}
+local LastInvCacheUpdate = 0
+
+local function UpdateInventoryCache()
+	local Now = tick()
+	if Now - LastInvCacheUpdate < 0.25 then return end
+	LastInvCacheUpdate = Now
+	table.clear(InventoryCache)
+	if LocalPlayer and LocalPlayer:FindFirstChild("Backpack") then
+		for _, item in ipairs(LocalPlayer.Backpack:GetChildren()) do
+			InventoryCache[item.Name] = item
+		end
+	end
+	if Character then
+		for _, item in ipairs(Character:GetChildren()) do
+			if item:IsA("Tool") then
+				InventoryCache[item.Name] = item
+			end
+		end
+	end
+end
+
+local function FastHasItem(name, onlyChar)
+	if onlyChar then
+		return Character and Character:FindFirstChild(name)
+	end
+	UpdateInventoryCache()
+	return InventoryCache[name]
+end
+
 Functions.TriggerPrompt = function(Prompt)
 	if not Prompt or not Prompt.Parent then return end
 
-	if Prompt.Name == "ManualOpenPrompt"
-		or (Prompt.Parent and (Prompt.Parent.Name == "DespawningDoor" or Prompt.Parent.Name:find("LeafWall") or Prompt.Parent.Name:find("Leafwall") or Prompt.Parent.Name:find("FlowerDoor")))
-		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name == "DespawningDoor" or Prompt.Parent.Parent.Name:find("LeafWall")))
-		or Prompt:FindFirstAncestor("DespawningDoor")
-		or Prompt:FindFirstAncestor("LeafWall")
-		or Prompt:FindFirstAncestor("Leafwall")
-	then
+	-- Immediate rejection for blacklisted prompts
+	local PName = Prompt.Name
+	if AutoInteractBlacklist[PName] then
+		PromptCooldowns[Prompt] = tick() + 1.0
 		return
 	end
 
-	local IsStorageBox = Prompt.ObjectText == "Storage Box"
-		or (Prompt.Parent and (Prompt.Parent.Name == "ArchivesStorageBox" or Prompt.Parent.Name:find("StorageBox")))
-		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name == "ArchivesStorageBox" or Prompt.Parent.Parent.Name:find("StorageBox")))
+	-- Blacklist Forget-Me-Not vine doors and flowers (prevents damage / jumpscares)
+	local Parent = Prompt.Parent
+	local ParentName = Parent and Parent.Name or ""
+	if PName == "EntryPrompt" or ParentName == "ForgetMeNotVineDoors"
+		or ParentName == "Flowers" or ParentName:find("Flower")
+		or Prompt:GetAttribute("AutoInteractIgnore")
+	then
+		PromptCooldowns[Prompt] = tick() + 5.0
+		return
+	end
+
+	if ParentName == "DespawningDoor" or ParentName:find("LeafWall") or ParentName:find("Leafwall") or ParentName:find("FlowerDoor") then
+		PromptCooldowns[Prompt] = tick() + 2.0
+		return
+	end
+
+	-- Ignore Laptops
+	if Options.AutoInteractIgnoreList and Options.AutoInteractIgnoreList.Value["Laptops"] then
+		if PName == "LaptopPrompt" or ParentName == "SecretLaptop" then
+			PromptCooldowns[Prompt] = tick() + 2.0
+			return
+		end
+	end
+
+	-- Storage Boxes ignore
+	local ObjText = Prompt.ObjectText or ""
+	local IsStorageBox = ObjText == "Storage Box" or ParentName == "ArchivesStorageBox" or ParentName:find("StorageBox")
 	if IsStorageBox and (Options.AutoInteractIgnoreList.Value["Storage Boxes"] ~= false) then
+		PromptCooldowns[Prompt] = tick() + 1.0
 		return
 	end
 
 	local IsJunk = Options.AutoInteractIgnoreList and Options.AutoInteractIgnoreList.Value["Junk"]
 
-	local IsSeatPrompt = Prompt.Name == "SeatPrompt" or Prompt.ActionText == "Seat" or (Prompt.Parent and (Prompt.Parent:IsA("Seat") or Prompt.Parent:IsA("VehicleSeat") or Prompt.Parent.Name == "SeatPart"))
+	-- Seat prompts ignore
+	local ActionText = Prompt.ActionText or ""
+	local IsSeatPrompt = PName == "SeatPrompt" or ActionText == "Seat" or (Parent:IsA("Seat") or Parent:IsA("VehicleSeat") or ParentName == "SeatPart")
 	if IsSeatPrompt and (IsJunk or (Toggles.AutoInteractIgnoreSeats and Toggles.AutoInteractIgnoreSeats.Value)) then
+		PromptCooldowns[Prompt] = tick() + 2.0
 		return
 	end
 
-	local IsPushPrompt = Prompt.Name == "CartPrompt" or Prompt.ActionText == "Push"
-	if IsPushPrompt and (IsJunk or (Toggles.DisablePushChairsToggle and Toggles.DisablePushChairsToggle.Value)) then
+	-- Push carts ignore
+	if (PName == "CartPrompt" or ActionText == "Push") and (IsJunk or (Toggles.DisablePushChairsToggle and Toggles.DisablePushChairsToggle.Value)) then
+		PromptCooldowns[Prompt] = tick() + 2.0
 		return
 	end
 
-	local IsPrinter = Prompt.Name == "LidPrompt"
-		or Prompt.ObjectText == "Lid"
-		or (Prompt.Parent and (Prompt.Parent.Name == "Lid" or Prompt.Parent.Name == "PrintedPaper" or Prompt.Parent.Name:find("Printer")))
-		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Printer"))
-	if IsPrinter and IsJunk then
+	-- Junk objects
+	if IsJunk then
+		if PName == "LidPrompt" or ObjText == "Lid" or ParentName == "PrintedPaper" or ParentName:find("Printer") then
+			PromptCooldowns[Prompt] = tick() + 2.0
+			return
+		end
+		if ObjText == "Anchor" or ParentName == "ArchivesTerminal" then
+			PromptCooldowns[Prompt] = tick() + 2.0
+			return
+		end
+		if PName == "TrashcanPrompt" or ObjText == "Trashcan" or ParentName:find("Trashcan") then
+			PromptCooldowns[Prompt] = tick() + 2.0
+			return
+		end
+		if PName == "FlakesPrompt" or ObjText == "Fih Tank" or ParentName:find("Fih") then
+			PromptCooldowns[Prompt] = tick() + 2.0
+			return
+		end
+		if ObjText:find("Vending") or ObjText:find("Shakelight") or ParentName:find("Vending") or ParentName:find("Shakelight") then
+			PromptCooldowns[Prompt] = tick() + 2.0
+			return
+		end
+	end
+
+	-- Hide prompts
+	if PName == "HidePrompt" or ActionText == "Hide" or ObjText:find("Bed") then
+		PromptCooldowns[Prompt] = tick() + 2.0
 		return
 	end
 
-	local IsTerminal = Prompt.ObjectText == "Anchor"
-		or (Prompt.Parent and Prompt.Parent.Name == "ArchivesTerminal")
-		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name == "ArchivesTerminal")
-	if IsTerminal and IsJunk then
-		return
-	end
+	-- Containers (Drawers / Lockers / Cabinets / Desks)
+	local IsContainer = (ObjText == "Wardrobe" or ObjText == "Locker" or ObjText == "Cabinet" or ObjText == "Drawer" or ObjText == "Desk")
+		or ParentName:find("Locker") or ParentName:find("Wardrobe") or ParentName:find("Cabinet") or ParentName:find("Drawer") or ParentName:find("Desk")
+		or (ActionText == "Open" and not ParentName:find("Door"))
 
-	local IsTrashcan = Prompt.Name == "TrashcanPrompt"
-		or Prompt.ObjectText == "Trashcan"
-		or (Prompt.Parent and Prompt.Parent.Name:find("Trashcan"))
-		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Trashcan"))
-	if IsTrashcan and IsJunk then
-		return
-	end
-
-	local IsFishTank = Prompt.Name == "FlakesPrompt"
-		or Prompt.ObjectText == "Fih Tank"
-		or (Prompt.Parent and Prompt.Parent.Name:find("Fih"))
-		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name:find("Fih"))
-	if IsFishTank and IsJunk then
-		return
-	end
-
-	local IsVendingMachine = (Prompt.ObjectText and (Prompt.ObjectText:find("Vending") or Prompt.ObjectText:find("Shakelight")))
-		or (Prompt.Parent and (Prompt.Parent.Name:find("Vending") or Prompt.Parent.Name:find("Shakelight")))
-		or (Prompt.Parent and Prompt.Parent.Parent and (Prompt.Parent.Parent.Name:find("Vending") or Prompt.Parent.Parent.Name:find("Shakelight")))
-		or (Prompt.ActionText and (Prompt.ActionText:find("10 Gold") or Prompt.ActionText:find("10 Coins") or (Prompt.ActionText:find("Purchase") and Prompt.ObjectText:find("Flashlight"))))
-	if IsVendingMachine and IsJunk then
-		return
-	end
-
-	local IsHidePrompt = Prompt.Name == "HidePrompt"
-		or Prompt.ActionText == "Hide"
-		or (Prompt.ObjectText and Prompt.ObjectText:find("Bed"))
-
-	local ModelAncestor = Prompt:FindFirstAncestorOfClass("Model")
-	local ModelName = ModelAncestor and ModelAncestor.Name or ""
-	local ParentName = Prompt.Parent and Prompt.Parent.Name or ""
-	local ObjText = Prompt.ObjectText or ""
-
-	local IsLockerOrWardrobe = (ObjText == "Wardrobe" or ObjText == "Locker" or ObjText == "Cabinet" or ObjText == "Drawer" or ObjText == "Desk")
-		or ParentName:find("Locker") or ParentName:find("Wardrobe") or ParentName:find("Cabinet") or ParentName:find("Drawer") or ParentName:find("Desk") or ParentName:find("Toolshed")
-		or ModelName:find("Locker") or ModelName:find("Wardrobe") or ModelName:find("Cabinet") or ModelName:find("Drawer") or ModelName:find("Desk") or ModelName:find("Toolshed")
-		or (Prompt.ActionText == "Open" and not ParentName:find("Door") and not ModelName:find("Door"))
-
-	local IsBrokenLocker = ParentName:find("Broken") or ModelName:find("Broken")
-
-	if IsHidePrompt then
-		return
-	end
-
-	if IsLockerOrWardrobe then
-		if IsBrokenLocker then return end
-		if Prompt.ActionText == "Close" then
+	if IsContainer then
+		if ParentName:find("Broken") then
+			PromptCooldowns[Prompt] = tick() + 5.0
+			return
+		end
+		if ActionText == "Close" then
 			OpenedContainers[Prompt] = true
+			PromptCooldowns[Prompt] = tick() + 10.0
 			return
 		end
-		if not (Toggles.AutoInteractLockers and Toggles.AutoInteractLockers.Value) then return end
-		-- If marked as opened but ActionText is still Open, anticheat blocked it! Allow retry!
-		if OpenedContainers[Prompt] and Prompt.ActionText ~= "Open" then
+		if not (Toggles.AutoInteractLockers and Toggles.AutoInteractLockers.Value) then
+			PromptCooldowns[Prompt] = tick() + 1.0
 			return
 		end
-		-- Rate limit retries per prompt to give server time to respond
+		-- Retry mechanism: if server/anticheat blocked opening, allow up to 5 attempts spaced by 0.35s
+		if (PromptAttempts[Prompt] or 0) >= 5 then
+			PromptCooldowns[Prompt] = tick() + 2.0
+			return
+		end
 		if tick() - (PromptCooldowns[Prompt] or 0) < 0.35 then
 			return
 		end
-		if (PromptAttempts[Prompt] or 0) >= 8 then
-			return
-		end
-	elseif AutoInteractBlacklist[Prompt.Name] then
-		return
 	end
-	if not Prompt or not Prompt.Parent then return end
 
-	local ParentItem = Functions.HasItem(Prompt.Parent.Name)
-	if ParentItem and ParentItem:GetAttribute("Durability") and ParentItem:GetAttribute("DurabilityMax")
-		and ParentItem:GetAttribute("Durability") >= ParentItem:GetAttribute("DurabilityMax")
-	then return end
-
+	-- Lock Prompts
 	local LockPromptNames = { UnlockPrompt=true, SkullPrompt=true, LockPrompt=true, ThingToEnable=true, FusesPrompt=true }
-	local IsLockPrompt = LockPromptNames[Prompt.Name]
-		or (Prompt.Parent and Prompt.Parent:GetAttribute("Locked") == true)
-		or (Prompt.Parent and Prompt.Parent.Parent and Prompt.Parent.Parent.Name == "Locker_Small_Locked" and Prompt.Name == "ActivateEventPrompt")
+	local IsLockPrompt = LockPromptNames[PName]
+		or (Parent:GetAttribute("Locked") == true)
+		or (Parent.Parent and Parent.Parent.Name == "Locker_Small_Locked" and PName == "ActivateEventPrompt")
 
 	if IsLockPrompt then
-		if Options.AutoInteractIgnoreList.Value["Locks"] then return end
-		local KeyItems = { "Key","GeneratorFuse","KeyBackdoor","KeyElectrical","KeyIron","Lockpick","SkeletonKey","Shears","Multitool" }
-		local OffhandKeyItems = { "Key","GeneratorFuse","KeyElectrical","KeyIron" }
-		local HasKey = false
-		for _, K in KeyItems do if Functions.HasItem(K, true) then HasKey = true break end end
-		for _, K in OffhandKeyItems do if Functions.HasItem(K) then HasKey = true break end end
-		if not HasKey then return end
-	end
-
-	if Prompt.Parent.Name == "CuttableVines" and not Functions.HasItem("Shears", true) and not Functions.HasItem("Multitool", true) or Prompt.Parent.Name == "Chest_Vine" and not Functions.HasItem("Shears", true) and not Functions.HasItem("Multitool", true) or Prompt.Parent.Name == "Cellar" and not Functions.HasItem("Shears", true) and not Functions.HasItem("Multitool", true) then return end
-	if Prompt.Parent.Name == "SkullLock" and not Functions.HasItem("SkeletonKey", true) then return end
-	if Prompt.Parent.Name == "Lock1" and not Functions.HasItem("Lockpick", true) and not Functions.HasItem("Multitool", true) or Prompt.Parent.Name == "Lock2" and not Functions.HasItem("Lockpick", true) and not Functions.HasItem("Multitool", true) then return end
-	if Functions.HasItem("Shears", true) and IsLockPrompt and Prompt.Parent.Name ~= "CuttableVines" and Prompt.Parent.Name ~= "Chest_Vine" and Prompt.Parent.Name ~= "Cellar" then return end
-
-	if Prompt.Parent.Name == "GlitchCube" and Options.AutoInteractIgnoreList.Value["Glitch Fragments"] then return end
-
-	if (Prompt.Parent.Name == "KeyObtain" and (Functions.HasItem("Key") or Functions.HasItem("KeyBackdoor")))
-		or (Prompt.Parent.Name == "ElectricalKeyObtain" and Functions.HasItem("KeyElectrical"))
-	then return end
-
-	if Prompt:IsDescendantOf(Drops) and Options.AutoInteractIgnoreList.Value["Dropped Items"] then return end
-	if Prompt.Parent.Name == "TrackLever" then return end
-	if Prompt.Name == "ActivateEventPrompt" and (Prompt.ActionText == "Close"
-		or Prompt.Parent.Name == "ElevatorBreaker"
-		or (Prompt.Parent.Parent and Prompt.Parent.Parent.Name == "IndustrialGate"))
-	then return end
-
-	-- Ignore Forget-Me-Not Vine Doors and flower prompts (prevents damage/jumpscares)
-	if Prompt.Name == "EntryPrompt" or (Prompt.Parent and Prompt.Parent.Name == "ForgetMeNotVineDoors")
-		or Prompt:FindFirstAncestor("ForgetMeNotVineDoors") or Prompt:FindFirstAncestor("ForgetMeNots")
-	then return end
-
-	-- Ignore Laptops if selected in ignore list
-	if Options.AutoInteractIgnoreList.Value["Laptops"]
-		and (Prompt.Name == "LaptopPrompt" or (Prompt.Parent and Prompt.Parent.Name == "SecretLaptop") or Prompt:FindFirstAncestor("SecretLaptop"))
-	then return end
-	if Prompt.Name == "ActivateEventPrompt" and (Prompt.Parent.Name == "Padlock" or Prompt.Parent.Name == "MinesAnchor") then return end
-	if Prompt.Parent.Name == "LeverForGate" and Prompt:GetAttribute("Interactions") then return end
-	if Prompt.Parent.Parent and (Prompt.Parent.Parent.Name == "DoorFake" or Prompt.Parent.Parent.Name == "FakeDoor") then return end
-	if Prompt.Parent:GetAttribute("JeffShop") and Options.AutoInteractIgnoreList.Value["Jeff Items"] then return end
-	if Prompt:GetAttribute("AutoInteractIgnore") then return end
-	if Prompt.Name == "PushPrompt" and Options.AutoInteractIgnoreList.Value["Minecarts"] then return end
-	if (Prompt.Parent.Name == "GoldPile" or Prompt.Parent.Name == "StardustPickup") and Options.AutoInteractIgnoreList.Value["Currency"] then return end
-
-	if Prompt.Parent.Name == "Bandage" then
-		local BPack = Functions.HasItem("BandagePack")
-		if Humanoid.Health >= Humanoid.MaxHealth and not BPack then return end
-		if BPack and BPack:GetAttribute("Durability") >= BPack:GetAttribute("DurabilityMax") then return end
-	end
-
-	if Prompt.Parent.Name == "Battery" then
-		local Tool = Character:FindFirstChildOfClass("Tool")
-		local BPack = Functions.HasItem("BatteryPack")
-		if not Tool and not BPack then return end
-		if Tool and Tool:GetAttribute("LightSource") then
-			if Tool:GetAttribute("Durability") and Tool:GetAttribute("DurabilityMax")
-				and Tool:GetAttribute("Durability") > Tool:GetAttribute("DurabilityMax")
-			then return end
-		elseif not BPack then
+		if Options.AutoInteractIgnoreList and Options.AutoInteractIgnoreList.Value["Locks"] then
+			PromptCooldowns[Prompt] = tick() + 2.0
 			return
 		end
-		if BPack and BPack:GetAttribute("Durability") >= BPack:GetAttribute("DurabilityMax") then return end
+		local HasKey = FastHasItem("Key", true) or FastHasItem("GeneratorFuse", true) or FastHasItem("KeyBackdoor", true)
+			or FastHasItem("KeyElectrical", true) or FastHasItem("KeyIron", true) or FastHasItem("Lockpick", true)
+			or FastHasItem("SkeletonKey", true) or FastHasItem("Shears", true) or FastHasItem("Multitool", true)
+			or FastHasItem("Key") or FastHasItem("GeneratorFuse") or FastHasItem("KeyElectrical") or FastHasItem("KeyIron")
+		if not HasKey then
+			PromptCooldowns[Prompt] = tick() + 1.0
+			return
+		end
 	end
 
-	if Prompt.Name == "HerbPrompt" then
-		local Effects = Globals.MainUI.MainFrame.Healthbar:FindFirstChild("Effects")
-		if Effects and Effects.HerbGreenEffect.Visible then return end
+	-- Specialized item requirements using FastHasItem
+	if ParentName == "CuttableVines" or ParentName == "Chest_Vine" or ParentName == "Cellar" then
+		if not FastHasItem("Shears", true) and not FastHasItem("Multitool", true) then
+			PromptCooldowns[Prompt] = tick() + 1.0
+			return
+		end
+	end
+	if ParentName == "SkullLock" and not FastHasItem("SkeletonKey", true) then
+		PromptCooldowns[Prompt] = tick() + 1.0
+		return
+	end
+	if (ParentName == "Lock1" or ParentName == "Lock2") and not FastHasItem("Lockpick", true) and not FastHasItem("Multitool", true) then
+		PromptCooldowns[Prompt] = tick() + 1.0
+		return
 	end
 
-	if (Prompt.Parent.Name == "LibraryHintPaper" or Prompt.Parent.Name == "PickupItem") and (Functions.HasItem("LibraryHintPaper") or Functions.HasItem("LibraryHintPaperHard")) then return end
-	if Prompt.Parent.Name == "AlarmClock" and Functions.HasItem("AlarmClock") then return end
-	if Prompt.Parent.Name == "KeyObtainFake" or Prompt.Parent.Name == "TithingPlate" then return end
+	if ParentName == "GlitchCube" and Options.AutoInteractIgnoreList.Value["Glitch Fragments"] then
+		PromptCooldowns[Prompt] = tick() + 2.0
+		return
+	end
 
-	PromptCooldowns[Prompt] = tick()
+	if (ParentName == "KeyObtain" and (FastHasItem("Key") or FastHasItem("KeyBackdoor")))
+		or (ParentName == "ElectricalKeyObtain" and FastHasItem("KeyElectrical"))
+	then
+		PromptCooldowns[Prompt] = tick() + 2.0
+		return
+	end
+
+	if Prompt:IsDescendantOf(Drops) and Options.AutoInteractIgnoreList.Value["Dropped Items"] then
+		PromptCooldowns[Prompt] = tick() + 1.0
+		return
+	end
+
+	if ParentName == "TrackLever" or ParentName == "KeyObtainFake" or ParentName == "TithingPlate" then
+		PromptCooldowns[Prompt] = tick() + 5.0
+		return
+	end
+
+	if PName == "ActivateEventPrompt" and (ActionText == "Close" or ParentName == "ElevatorBreaker" or (Parent.Parent and Parent.Parent.Name == "IndustrialGate")) then
+		PromptCooldowns[Prompt] = tick() + 2.0
+		return
+	end
+
+	if PName == "PushPrompt" and Options.AutoInteractIgnoreList.Value["Minecarts"] then
+		PromptCooldowns[Prompt] = tick() + 2.0
+		return
+	end
+
+	if (ParentName == "GoldPile" or ParentName == "StardustPickup") and Options.AutoInteractIgnoreList.Value["Currency"] then
+		PromptCooldowns[Prompt] = tick() + 2.0
+		return
+	end
+
+	if ParentName == "Bandage" then
+		local BPack = FastHasItem("BandagePack")
+		if Humanoid.Health >= Humanoid.MaxHealth and not BPack then
+			PromptCooldowns[Prompt] = tick() + 1.0
+			return
+		end
+	end
+
+	if ParentName == "Battery" then
+		local Tool = Character:FindFirstChildOfClass("Tool")
+		local BPack = FastHasItem("BatteryPack")
+		if not Tool and not BPack then
+			PromptCooldowns[Prompt] = tick() + 1.0
+			return
+		end
+	end
+
+	-- Successful trigger path
+	PromptCooldowns[Prompt] = tick() + 0.15
 	PromptAttempts[Prompt] = (PromptAttempts[Prompt] or 0) + 1
 	GlobalInteractDebounce = tick()
 
 	Functions.FirePrompt(Prompt)
 end
 
-Globals.LastAutoInteractFire = tick()
+Globals.LastAutoInteractFire = 0
+-- Optimized AutoInteract engine: runs at ~13 Hz (every 0.075s), zero frame drops, smart retry
 Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 	local Active = Toggles.AutoInteractToggle.Value or Options.AutoInteractKeybind:GetState()
 	if not Active then return end
 	if Character and Character:GetAttribute("Hiding") == true then return end
-	-- Balanced rate (~35 checks/sec)
-	if tick() - Globals.LastAutoInteractFire < 0.028 then return end
-	Globals.LastAutoInteractFire = tick()
+
+	local Now = tick()
+	if Now - Globals.LastAutoInteractFire < 0.075 then return end
+	Globals.LastAutoInteractFire = Now
 
 	local Root = Character and (Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("Collision") or Character:FindFirstChild("Head"))
 	if not Root then return end
@@ -4831,80 +4931,56 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 	local CurrRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom")) or 0
 	local Count = 0
 
-	-- Gathers prompts ONLY from current room, next room (door), and unassigned (0)
-	-- Replaces 650+ reflection calls with ~30 local checks (2800x faster, ZERO frame drops)
-	local PromptsToCheck = {}
-	local function GatherRoom(RNum)
-		local RList = Objects.RoomPrompts and Objects.RoomPrompts[RNum]
-		if not RList then return end
-		for i = #RList, 1, -1 do
-			local P = RList[i]
-			if not P or not P.Parent or not P:IsDescendantOf(workspace) then
-				table.remove(RList, i)
-			else
-				table.insert(PromptsToCheck, P)
+	-- Direct iteration of room-indexed prompts without table allocations or array shifts
+	local function ProcessList(list)
+		if not list then return end
+		for i = #list, 1, -1 do
+			local Prompt = list[i]
+			if not Prompt or not Prompt.Parent or not Prompt:IsDescendantOf(workspace) then
+				table.remove(list, i)
+				continue
+			end
+
+			-- Fast pre-filters (O(1) memory checks)
+			local IsSpecialPush = Prompt.Name == "LongPushPrompt" or Prompt.Name == "BigPropPrompt"
+			if not Prompt.Enabled and not IsSpecialPush then continue end
+			if AutoInteractBlacklist[Prompt.Name] then continue end
+			if Now < (PromptCooldowns[Prompt] or 0) then continue end
+
+			-- Squared distance check (zero vector allocations)
+			local PromptParent = Prompt.Parent
+			local TargetPos
+			if PromptParent:IsA("BasePart") then
+				TargetPos = PromptParent.Position
+			elseif PromptParent:IsA("Model") then
+				local Prim = PromptParent.PrimaryPart
+				TargetPos = Prim and Prim.Position or (PromptParent:FindFirstChildWhichIsA("BasePart") and PromptParent:FindFirstChildWhichIsA("BasePart").Position)
+			end
+
+			if TargetPos then
+				local dx = TargetPos.X - MyPos.X
+				local dy = TargetPos.Y - MyPos.Y
+				local dz = TargetPos.Z - MyPos.Z
+				local DistSq = dx * dx + dy * dy + dz * dz
+				local MaxDist = Prompt.MaxActivationDistance
+				if DistSq <= (MaxDist * MaxDist) then
+					Functions.TriggerPrompt(Prompt)
+					Count += 1
+					if Count >= 5 then break end
+				end
 			end
 		end
 	end
 
-	GatherRoom(CurrRoom)
-	GatherRoom(CurrRoom + 1)
-	GatherRoom(0)
-
-	if #PromptsToCheck == 0 and Objects.Prompts then
-		for i = #Objects.Prompts, 1, -1 do
-			local P = Objects.Prompts[i]
-			if not P or not P.Parent or not P:IsDescendantOf(workspace) then
-				table.remove(Objects.Prompts, i)
-			else
-				table.insert(PromptsToCheck, P)
-			end
-		end
+	if Objects.RoomPrompts then
+		ProcessList(Objects.RoomPrompts[CurrRoom])
+		if Count < 5 then ProcessList(Objects.RoomPrompts[CurrRoom + 1]) end
+		if Count < 5 then ProcessList(Objects.RoomPrompts[0]) end
 	end
 
-	for _, Prompt in ipairs(PromptsToCheck) do
-		local IsSpecialPush = Prompt.Name == "LongPushPrompt" or Prompt.Name == "BigPropPrompt"
-		if not Prompt.Enabled and not IsSpecialPush then continue end
-
-		-- Ignore Forget-Me-Not vine doors and flowers (prevents damage)
-		if Prompt.Name == "EntryPrompt" or (Prompt.Parent and Prompt.Parent.Name == "ForgetMeNotVineDoors")
-			or Prompt:FindFirstAncestor("ForgetMeNotVineDoors") or Prompt:FindFirstAncestor("ForgetMeNots")
-		then
-			continue
-		end
-
-		-- Ignore Laptops
-		if Options.AutoInteractIgnoreList.Value["Laptops"]
-			and (Prompt.Name == "LaptopPrompt" or (Prompt.Parent and Prompt.Parent.Name == "SecretLaptop") or Prompt:FindFirstAncestor("SecretLaptop"))
-		then
-			continue
-		end
-
-		-- Cooldown per prompt (0.12s allows rapid interaction while preventing spam)
-		if tick() - (PromptCooldowns[Prompt] or 0) < 0.12 then continue end
-
-		-- Calculate squared distance with zero vector allocations
-		local PromptParent = Prompt.Parent
-		local TargetPos
-		if PromptParent:IsA("BasePart") then
-			TargetPos = PromptParent.Position
-		elseif PromptParent:IsA("Model") then
-			local Prim = PromptParent.PrimaryPart
-			TargetPos = Prim and Prim.Position or (PromptParent:FindFirstChildWhichIsA("BasePart") and PromptParent:FindFirstChildWhichIsA("BasePart").Position)
-		end
-
-		if TargetPos then
-			local dx = TargetPos.X - MyPos.X
-			local dy = TargetPos.Y - MyPos.Y
-			local dz = TargetPos.Z - MyPos.Z
-			local DistSq = dx * dx + dy * dy + dz * dz
-			local MaxDist = Prompt.MaxActivationDistance
-			if DistSq <= (MaxDist * MaxDist) then
-				Functions.TriggerPrompt(Prompt)
-				Count += 1
-				if Count >= 6 then break end
-			end
-		end
+	-- Fallback only if no room prompts were found at all
+	if Count == 0 and Objects.Prompts and #Objects.Prompts > 0 and (not Objects.RoomPrompts or not Objects.RoomPrompts[CurrRoom]) then
+		ProcessList(Objects.Prompts)
 	end
 end)
 
