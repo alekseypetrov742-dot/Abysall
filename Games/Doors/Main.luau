@@ -2231,6 +2231,13 @@ Groupboxes.Floors_Automation:AddToggle("ForgetMeNotHelper", {
 	Tooltip = "Detects anomalies in Archives Forget-Me-Not room and tells you whether to go Forward or Backward."
 })
 
+Toggles.ForgetMeNotHelper:OnChanged(function(Value)
+	if not Value then
+		if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
+		if Functions.ClearFMN_ESP then Functions.ClearFMN_ESP() end
+	end
+end)
+
 Toggles.RoomsAutoWalk:OnChanged(function()
 	for _, Object in Globals.RoomsNodesFolder:GetChildren() do
 		if Object.Name == "PathNode" then Object:Destroy() end
@@ -2404,8 +2411,43 @@ Connections.RoomsAutoWalkHandler = Services.RunService.Heartbeat:Connect(functio
 	Globals.RoomsAutoWalkActive = false
 end)
 
+Globals.FMN_ESP_Tracked = {}
+
+Functions.ClearFMN_ESP = function()
+	for obj in pairs(Globals.FMN_ESP_Tracked) do
+		if obj then
+			Functions.RemoveESP(obj)
+		end
+	end
+	table.clear(Globals.FMN_ESP_Tracked)
+end
+
+Functions.SetOrUpdateESP = function(Object, Text, Color)
+	if not Object then return end
+	local Lib = Abysall and Abysall.ESPLibrary
+	if not Lib then return end
+
+	if Lib.ElementsEnabled[Object] then
+		Lib.ColorTable[Object] = Color
+		Lib.TextTable[Object] = Text
+		local Label = Lib.Labels[Object]
+		if Label then
+			Label.TextColor3 = Color
+			Label.Text = Text
+		end
+		local Highlight = Lib.Highlights[Object]
+		if Highlight then
+			Highlight.FillColor = Color
+			Highlight.OutlineColor = Color
+		end
+	else
+		Functions.AddESP({ Object = Object, Text = Text, Color = Color })
+	end
+	Globals.FMN_ESP_Tracked[Object] = true
+end
+
 local function GetOrCreateFMN_HUD()
-	if Globals.FMN_HUD then return Globals.FMN_HUD end
+	if Globals.FMN_HUD and Globals.FMN_HUD.Parent then return Globals.FMN_HUD end
 	local HiddenUI = (gethui and gethui()) or Services.CoreGui
 
 	local Gui = HiddenUI:FindFirstChild("Abysall_FMN_HUD")
@@ -2419,8 +2461,8 @@ local function GetOrCreateFMN_HUD()
 
 	local Frame = Instance.new("Frame")
 	Frame.Name = "MainFrame"
-	Frame.Size = UDim2.new(0, 440, 0, 72)
-	Frame.Position = UDim2.new(0.5, -220, 0, 25)
+	Frame.Size = UDim2.new(0, 460, 0, 74)
+	Frame.Position = UDim2.new(0.5, -230, 0, 24)
 	Frame.BackgroundColor3 = Color3.fromRGB(16, 16, 16)
 	Frame.BackgroundTransparency = 0.12
 	Frame.BorderSizePixel = 0
@@ -2447,16 +2489,16 @@ local function GetOrCreateFMN_HUD()
 	local Status = Instance.new("TextLabel", Frame)
 	Status.Name = "Status"
 	Status.Size = UDim2.new(1, -20, 0, 24)
-	Status.Position = UDim2.new(0, 10, 0, 23)
+	Status.Position = UDim2.new(0, 10, 0, 24)
 	Status.BackgroundTransparency = 1
 	Status.Font = Enum.Font.GothamBold
-	Status.TextSize = 16
+	Status.TextSize = 15
 	Status.TextColor3 = Color3.fromRGB(255, 75, 75)
 	Status.Text = "ПРОВЕРКА КОМНАТЫ..."
 
 	local Detail = Instance.new("TextLabel", Frame)
 	Detail.Name = "Detail"
-	Detail.Size = UDim2.new(1, -20, 0, 18)
+	Detail.Size = UDim2.new(1, -20, 0, 20)
 	Detail.Position = UDim2.new(0, 10, 0, 48)
 	Detail.BackgroundTransparency = 1
 	Detail.Font = Enum.Font.Gotham
@@ -2468,7 +2510,7 @@ local function GetOrCreateFMN_HUD()
 	return Gui
 end
 
-Functions.UpdateFMN_HUD = function(HasAnomaly, Reason, ActiveRoom, ForwardDoor, BackwardDoor)
+Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor)
 	local Gui = GetOrCreateFMN_HUD()
 	Gui.Enabled = true
 	local Frame = Gui:FindFirstChild("MainFrame")
@@ -2477,7 +2519,15 @@ Functions.UpdateFMN_HUD = function(HasAnomaly, Reason, ActiveRoom, ForwardDoor, 
 	local Status = Frame:FindFirstChild("Status")
 	local Detail = Frame:FindFirstChild("Detail")
 
-	if HasAnomaly then
+	if State == "Scanning" then
+		if Stroke then Stroke.Color = Color3.fromRGB(255, 200, 50) end
+		if Status then
+			Status.TextColor3 = Color3.fromRGB(255, 200, 50)
+			Status.Text = "⏳ СКАНИРОВАНИЕ КОМНАТЫ..."
+		end
+		if Detail then Detail.Text = Reason or "Ожидание загрузки объектов..." end
+
+	elseif State == "Anomaly" then
 		if Stroke then Stroke.Color = Color3.fromRGB(255, 45, 45) end
 		if Status then
 			Status.TextColor3 = Color3.fromRGB(255, 65, 65)
@@ -2487,26 +2537,27 @@ Functions.UpdateFMN_HUD = function(HasAnomaly, Reason, ActiveRoom, ForwardDoor, 
 
 		if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value then
 			if BackwardDoor then
-				Functions.AddESP({ Object = BackwardDoor, Text = "НАЗАД (ВЕРНЫЙ ПУТЬ)", Color = Color3.fromRGB(50, 255, 50) })
+				Functions.SetOrUpdateESP(BackwardDoor, "НАЗАД (ВЕРНЫЙ ПУТЬ)", Color3.fromRGB(50, 255, 50))
 			end
 			if ForwardDoor then
-				Functions.AddESP({ Object = ForwardDoor, Text = "ВПЕРЁД (ОПАСНО: АНОМАЛИЯ)", Color = Color3.fromRGB(255, 45, 45) })
+				Functions.SetOrUpdateESP(ForwardDoor, "ВПЕРЁД (ОПАСНО: АНОМАЛИЯ)", Color3.fromRGB(255, 45, 45))
 			end
 		end
-	else
+
+	elseif State == "Clean" then
 		if Stroke then Stroke.Color = Color3.fromRGB(45, 255, 45) end
 		if Status then
 			Status.TextColor3 = Color3.fromRGB(65, 255, 65)
 			Status.Text = "✅ ВСЁ ЧИСТО! ➔ ИДИТЕ ВПЕРЁД (В ЦВЕТОЧНУЮ ДВЕРЬ)"
 		end
-		if Detail then Detail.Text = "Все 14 объектов на месте (аномалий нет)" end
+		if Detail then Detail.Text = Reason or "Все 14 объектов в норме (аномалий нет)" end
 
 		if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value then
 			if ForwardDoor then
-				Functions.AddESP({ Object = ForwardDoor, Text = "ВПЕРЁД (ВЕРНЫЙ ПУТЬ)", Color = Color3.fromRGB(50, 255, 50) })
+				Functions.SetOrUpdateESP(ForwardDoor, "ВПЕРЁД (ВЕРНЫЙ ПУТЬ)", Color3.fromRGB(50, 255, 50))
 			end
 			if BackwardDoor then
-				Functions.AddESP({ Object = BackwardDoor, Text = "НАЗАД (НЕВЕРНО: ЧИСТАЯ КОМНАТА)", Color = Color3.fromRGB(255, 45, 45) })
+				Functions.SetOrUpdateESP(BackwardDoor, "НАЗАД (НЕВЕРНО: ЧИСТАЯ КОМНАТА)", Color3.fromRGB(255, 45, 45))
 			end
 		end
 	end
@@ -2523,9 +2574,17 @@ task.spawn(function()
 		["PottedPlant_Archives_Large"] = 4,
 	}
 
-	while task.wait(0.2) do
+	local LastTeleportTime = 0
+	local LastPlayerPos = nil
+	local WasInFMN = false
+
+	while task.wait(0.15) do
 		if not Toggles.ForgetMeNotHelper or not Toggles.ForgetMeNotHelper.Value then
 			if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
+			if WasInFMN then
+				Functions.ClearFMN_ESP()
+				WasInFMN = false
+			end
 			continue
 		end
 
@@ -2536,7 +2595,9 @@ task.spawn(function()
 			continue
 		end
 
-		-- 1. Resolve Active Room: prioritize player-specific clone folder in CurrentRooms (Upper Room!)
+		local MyPos = Root.Position
+
+		-- 1. Find Active Room: prioritize player-specific upper clone folder
 		local ActiveRoom = nil
 		local BaseRoom = nil
 		if CurrentRooms then
@@ -2561,12 +2622,16 @@ task.spawn(function()
 
 		if not ActiveRoom then
 			if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
+			if WasInFMN then
+				Functions.ClearFMN_ESP()
+				WasInFMN = false
+			end
 			continue
 		end
 
 		-- 2. Identify Forward and Backward doors in ActiveRoom
-		local EntVoid = ActiveRoom:FindFirstChild("EntranceVoid") or ActiveRoom:FindFirstChild("RoomEntrance")
-		local ExitVoid = ActiveRoom:FindFirstChild("ExitVoid") or ActiveRoom:FindFirstChild("RoomExit")
+		local EntVoid = ActiveRoom:FindFirstChild("EntranceVoid") or ActiveRoom:FindFirstChild("RoomEntrance") or ActiveRoom:FindFirstChild("Entrance")
+		local ExitVoid = ActiveRoom:FindFirstChild("ExitVoid") or ActiveRoom:FindFirstChild("RoomExit") or ActiveRoom:FindFirstChild("Exit")
 
 		local VineDoors = {}
 		for _, c in ipairs(ActiveRoom:GetChildren()) do
@@ -2575,14 +2640,34 @@ task.spawn(function()
 			end
 		end
 
+		local EntPos = nil
+		if EntVoid then
+			if EntVoid:IsA("PVInstance") then
+				EntPos = EntVoid:GetPivot().Position
+			else
+				local bp = EntVoid:FindFirstChildWhichIsA("BasePart", true)
+				EntPos = bp and bp.Position
+			end
+		end
+
+		local ExitPos = nil
+		if ExitVoid then
+			if ExitVoid:IsA("PVInstance") then
+				ExitPos = ExitVoid:GetPivot().Position
+			else
+				local bp = ExitVoid:FindFirstChildWhichIsA("BasePart", true)
+				ExitPos = bp and bp.Position
+			end
+		end
+
 		local ForwardDoor = nil
 		local BackwardDoor = nil
 
-		if #VineDoors >= 2 and EntVoid and ExitVoid then
+		if #VineDoors >= 2 and EntPos and ExitPos then
 			for _, d in ipairs(VineDoors) do
 				local dPos = d:GetPivot().Position
-				local dEnt = (dPos - EntVoid:GetPivot().Position).Magnitude
-				local dExit = (dPos - ExitVoid:GetPivot().Position).Magnitude
+				local dEnt = (dPos - EntPos).Magnitude
+				local dExit = (dPos - ExitPos).Magnitude
 				if dEnt < dExit then
 					BackwardDoor = d
 				else
@@ -2597,44 +2682,69 @@ task.spawn(function()
 			ForwardDoor = VineDoors[2]
 		end
 
-		local MyPos = Root.Position
-
-		-- Generous boundary check using ActiveRoom and doors
+		-- 3. Room boundary check: safe against Folder (no direct Folder:GetPivot call!)
 		local InRoom = false
 		if ForwardDoor and (MyPos - ForwardDoor:GetPivot().Position).Magnitude < 220 then
 			InRoom = true
-		elseif BackwardDoor and (MyPos - BackwardDoor:GetPivot().Position).Magnitude < 220 then
+		elseif BackwardDoor and BackwardDoor:IsA("PVInstance") and (MyPos - BackwardDoor:GetPivot().Position).Magnitude < 220 then
 			InRoom = true
-		elseif (MyPos - ActiveRoom:GetPivot().Position).Magnitude < 280 then
+		elseif EntPos and (MyPos - EntPos).Magnitude < 220 then
+			InRoom = true
+		elseif ActiveRoom:IsA("PVInstance") and (MyPos - ActiveRoom:GetPivot().Position).Magnitude < 280 then
 			InRoom = true
 		end
 
 		if not InRoom then
 			if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
+			if WasInFMN then
+				Functions.ClearFMN_ESP()
+				WasInFMN = false
+			end
 			continue
 		end
 
-		-- Clean up old ESP from base room doors if active in player clone
+		WasInFMN = true
+
+		-- Clean up base room door ESP when active in upper clone room
 		if ActiveRoom ~= BaseRoom and BaseRoom then
-			local BaseVineDoors = BaseRoom:FindFirstChild("ForgetMeNotVineDoors")
-			if BaseVineDoors then Functions.RemoveESP(BaseVineDoors) end
+			local BaseVine = BaseRoom:FindFirstChild("ForgetMeNotVineDoors")
+			if BaseVine then Functions.RemoveESP(BaseVine) end
 			local BaseEnt = BaseRoom:FindFirstChild("RoomEntrance")
 			if BaseEnt then Functions.RemoveESP(BaseEnt) end
 		end
 
-		-- 3. Evaluate Anomalies in ActiveRoom
+		-- 4. Teleport / Cycle Advance detection (player jumped > 35 studs in one frame)
+		if LastPlayerPos then
+			local StepDist = (MyPos - LastPlayerPos).Magnitude
+			if StepDist > 35 then
+				LastTeleportTime = tick()
+			end
+		end
+		LastPlayerPos = MyPos
+
+		-- If recently teleported (within 0.4s), allow room objects to replicate
+		if tick() - LastTeleportTime < 0.4 then
+			Functions.UpdateFMN_HUD("Scanning", "Новый цикл: загрузка объектов комнаты...", ForwardDoor, BackwardDoor)
+			continue
+		end
+
+		-- 5. Evaluate Anomalies in ActiveRoom
 		local Assets = ActiveRoom:FindFirstChild("Assets")
 		local Deletable = Assets and Assets:FindFirstChild("Deletable")
 		local Fixed = Assets and Assets:FindFirstChild("Fixed")
+
+		local DelChildren = Deletable and Deletable:GetChildren() or {}
+		if #DelChildren < 8 then
+			Functions.UpdateFMN_HUD("Scanning", string.format("Загрузка объектов (%d/14)...", #DelChildren), ForwardDoor, BackwardDoor)
+			continue
+		end
 
 		local Anomalies = {}
 
 		-- Factor 1: Object counts in Deletable
 		local CurrentCounts = {}
-		if Deletable then
-			for _, c in ipairs(Deletable:GetChildren()) do
-				CurrentCounts[c.Name] = (CurrentCounts[c.Name] or 0) + 1
-			end
+		for _, c in ipairs(DelChildren) do
+			CurrentCounts[c.Name] = (CurrentCounts[c.Name] or 0) + 1
 		end
 
 		for name, expCount in pairs(ExpectedCounts) do
@@ -2651,13 +2761,32 @@ task.spawn(function()
 			end
 		end
 
-		-- Factor 2: Tram Glitch attribute (no broken hardcoded global coordinates!)
-		if Deletable then
-			local Tram = Deletable:FindFirstChild("Tram-Archives")
-			if Tram and Tram:IsA("Model") then
-				if Tram:GetAttribute("Glitched") == true then
-					table.insert(Anomalies, "Трамвай застрял в стене")
+		-- Factor 2: Relative position and attribute checks
+		local BaseY = nil
+		for _, c in ipairs(DelChildren) do
+			if c.Name == "ArchivesWaitingSeats" and c:IsA("PVInstance") then
+				BaseY = c:GetPivot().Position.Y
+				break
+			end
+		end
+
+		local Tram = Deletable:FindFirstChild("Tram-Archives")
+		if Tram and Tram:IsA("Model") then
+			if Tram:GetAttribute("Glitched") == true then
+				table.insert(Anomalies, "Трамвай застрял в стене")
+			elseif BaseY then
+				local RelY = Tram:GetPivot().Position.Y - BaseY
+				if math.abs(RelY - 3.98) > 3.0 then
+					table.insert(Anomalies, "Трамвай смещён по высоте")
 				end
+			end
+		end
+
+		local WetSign = Deletable:FindFirstChild("WetFloorSign")
+		if WetSign and WetSign:IsA("Model") and BaseY then
+			local RelY = WetSign:GetPivot().Position.Y - BaseY
+			if math.abs(RelY - 1.20) > 3.0 then
+				table.insert(Anomalies, "Табличка мокрого пола смещена")
 			end
 		end
 
@@ -2677,7 +2806,11 @@ task.spawn(function()
 			end
 		end
 
-		Functions.UpdateFMN_HUD(#Anomalies > 0, table.concat(Anomalies, ", "), ActiveRoom, ForwardDoor, BackwardDoor)
+		if #Anomalies > 0 then
+			Functions.UpdateFMN_HUD("Anomaly", table.concat(Anomalies, ", "), ForwardDoor, BackwardDoor)
+		else
+			Functions.UpdateFMN_HUD("Clean", "Все 14 объектов в норме (аномалий нет)", ForwardDoor, BackwardDoor)
+		end
 	end
 end)
 
@@ -2687,14 +2820,14 @@ Functions.HandleForgetMeNot = function(Room)
 	local HasVineDoors = Room:FindFirstChild("ForgetMeNotVineDoors")
 	if not (RawName == "Archives_ForgetMeNotRoom" or HasVineDoors) then return end
 
+	-- Skip if already inside upper clone room
+	local pFolder = Room:FindFirstChild(LocalPlayer.Name)
+	if pFolder then return end
+
 	if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value then
 		local VineDoors = Room:FindFirstChild("ForgetMeNotVineDoors")
 		if VineDoors then
-			Functions.AddESP({ Object = VineDoors, Text = "Forget-Me-Not Door", Color = Color3.fromRGB(140, 0, 255) })
-		end
-		local Entrance = Room:FindFirstChild("RoomEntrance")
-		if Entrance then
-			Functions.AddESP({ Object = Entrance, Text = "Forget-Me-Not Entrance", Color = Color3.fromRGB(50, 200, 50) })
+			Functions.SetOrUpdateESP(VineDoors, "Forget-Me-Not Door", Color3.fromRGB(140, 0, 255))
 		end
 	end
 end
@@ -2876,6 +3009,12 @@ Groupboxes.Floors_Visuals:AddToggle("ForgetMeNotESP", {
 	Text = "Forget-Me-Not ESP", Default = true,
 	Tooltip = "Highlights Forget-Me-Not vine doors, flowers, and detected anomalies."
 })
+
+Toggles.ForgetMeNotESP:OnChanged(function(Value)
+	if not Value then
+		if Functions.ClearFMN_ESP then Functions.ClearFMN_ESP() end
+	end
+end)
 
 Groupboxes.Floors_Bypass = Tabs.Floors:AddLeftGroupbox("Bypass")
 Groupboxes.Floors_Bypass:AddToggle("RemoveSeekTrigger", {
@@ -5321,6 +5460,8 @@ Library:OnUnload(function()
 
 	CollisionClone:Destroy()
 	CollisionPartClone:Destroy()
+	if Globals.FMN_HUD then Globals.FMN_HUD:Destroy() Globals.FMN_HUD = nil end
+	if Functions.ClearFMN_ESP then Functions.ClearFMN_ESP() end
 	Abysall.ESPLibrary:Unload()
 
 	if Main_Game then
@@ -5337,6 +5478,6 @@ Library:OnUnload(function()
 	getgenv().Abysall = nil
 end)
 
-while not Globals.MainUI do task.wait() end
+Abysall.Unload = function() Library:Unload() end\nwhile not Globals.MainUI do task.wait() end
 Abysall.Interface.ApplySettingsTab(Window)
 Functions.Notify({ Title = "Successfully loaded in " .. math.floor((tick() - LoadStart) * 1000) / 1000 .. " seconds." , Body = "Press '" .. tostring(Options.MenuKeybind.Value) .. "' to toggle the UI."})

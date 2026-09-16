@@ -1,9 +1,7 @@
-if Abysall then
-    return 
+if getgenv().Abysall and getgenv().Abysall.Unload then
+    pcall(getgenv().Abysall.Unload)
 end
-getgenv().Abysall = {
-    Legit = true
-}
+getgenv().Abysall = nil
 
 local GameList = {
   [2440500124] = "Doors"
