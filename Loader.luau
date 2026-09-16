@@ -8,9 +8,12 @@ local GameList = {
 }
 
 local BaseUrl = "https://raw.githubusercontent.com/alekseypetrov742-dot/Abysall/refs/heads/main/"
+local function GetLatest(path)
+    return game:HttpGet(BaseUrl .. path .. "?t=" .. tick())
+end
 getgenv().Abysall = {
-    Environment = loadstring(game:HttpGet(BaseUrl .. "Components/Environment.luau"))(),
-    ESPLibrary = loadstring(game:HttpGet(BaseUrl .. "Components/ESP.luau"))(),
+    Environment = loadstring(GetLatest("Components/Environment.luau"))(),
+    ESPLibrary = loadstring(GetLatest("Components/ESP.luau"))(),
 
     Legit = true, -- pog
 }
@@ -56,12 +59,12 @@ if Abysall.Environment.writefile and Abysall.Environment.readfile then
     Abysall.Environment.writefile("Abysall/UserData.json", Services.HttpService:JSONEncode(Decoded))
 end
 
-Abysall.Interface = loadstring(game:HttpGet(BaseUrl .. "Components/Interface.luau"))()
+Abysall.Interface = loadstring(GetLatest("Components/Interface.luau"))()
 Abysall.Analytics = {}
 
 local CurrentGame = GameList[game.GameId]
 if CurrentGame then
-    loadstring(game:HttpGet(BaseUrl .. "Games/" .. CurrentGame .. "/Loader.luau"))()
+    loadstring(GetLatest("Games/" .. CurrentGame .. "/Loader.luau"))()
 else
-    loadstring(game:HttpGet(BaseUrl .. "Games/Universal/Loader.luau"))()
+    loadstring(GetLatest("Games/Universal/Loader.luau"))()
 end
