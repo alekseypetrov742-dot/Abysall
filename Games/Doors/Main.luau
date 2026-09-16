@@ -2516,7 +2516,7 @@ local function GetOrCreateFMN_HUD()
 	return Gui
 end
 
-Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor)
+Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor, AnomalousObjects)
 	local Gui = GetOrCreateFMN_HUD()
 	Gui.Enabled = true
 	local Frame = Gui:FindFirstChild("MainFrame")
@@ -2547,6 +2547,13 @@ Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor)
 			end
 			if ForwardDoor then
 				Functions.SetOrUpdateESP(ForwardDoor, "ВПЕРЁД (ОПАСНО: АНОМАЛИЯ)", Color3.fromRGB(255, 45, 45))
+			end
+			if AnomalousObjects then
+				for _, anom in ipairs(AnomalousObjects) do
+					if anom.Object then
+						Functions.SetOrUpdateESP(anom.Object, anom.Label or "⚠️ АНОМАЛИЯ", Color3.fromRGB(255, 50, 50))
+					end
+				end
 			end
 		end
 
@@ -2745,7 +2752,17 @@ task.spawn(function()
 			continue
 		end
 
+		local ExpectedRelY = {
+			["ArchivesWaitingSeats"] = 0.0,
+			["WetFloorSign"] = 1.20,
+			["PottedPlant_Archives_Large"] = 0.47,
+			["Tram-Archives"] = 3.98,
+			["Pillars"] = 6.70,
+			["ArchivesCeilingLightNoPrefab"] = 17.85,
+		}
+
 		local Anomalies = {}
+		local AnomalousObjects = {}
 
 		-- Factor 1: Object counts in Deletable
 		local CurrentCounts = {}
@@ -2764,39 +2781,84 @@ task.spawn(function()
 		for name in pairs(CurrentCounts) do
 			if not ExpectedCounts[name] then
 				table.insert(Anomalies, string.format("Чужеродный объект: %s", name))
+				for _, c in ipairs(DelChildren) do
+					if c.Name == name then
+						table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЛИШНИЙ: " .. name })
+					end
+				end
 			end
 		end
 
-		-- Factor 2: Relative position and attribute checks
+		-- Factor 2: Tilt / Knocked over / Inverted checks (UpVector.Y)
+		for _, c in ipairs(DelChildren) do
+			if c:IsA("PVInstance") then
+				local cf = c:GetPivot()
+				-- In normal room, all objects are strictly upright with UpVector.Y == 1 (or within 0.05)
+				if math.abs(cf.UpVector.Y - 1) > 0.05 then
+					local angle = math.deg(math.acos(math.clamp(cf.UpVector.Y, -1, 1)))
+					table.insert(Anomalies, string.format("Опрокинут/наклонён: %s (%.0f°)", c.Name, angle))
+					table.insert(AnomalousObjects, { Object = c, Label = string.format("⚠️ ОПРОКИНУТ: %s (%.0f°)", c.Name, angle) })
+				end
+			end
+			-- Check individual seats on benches
+			if c.Name == "ArchivesWaitingSeats" then
+				for _, sc in ipairs(c:GetChildren()) do
+					if sc:IsA("PVInstance") and sc.Name:find("Seat") then
+						local scf = sc:GetPivot()
+						if math.abs(scf.UpVector.Y - 1) > 0.05 and math.abs(c:GetPivot().UpVector.Y - 1) <= 0.05 then
+							table.insert(Anomalies, string.format("Сиденье опрокинуто на %s", sc.Name))
+							table.insert(AnomalousObjects, { Object = sc, Label = "⚠️ ОПРОКИНУТОЕ СИДЕНЬЕ" })
+						end
+					end
+				end
+			end
+		end
+
+		-- Factor 3: BaseY and Floating/Sunk checks
 		local BaseY = nil
 		for _, c in ipairs(DelChildren) do
-			if c.Name == "ArchivesWaitingSeats" and c:IsA("PVInstance") then
+			if c.Name == "ArchivesWaitingSeats" and c:IsA("PVInstance") and math.abs(c:GetPivot().UpVector.Y - 1) <= 0.05 then
 				BaseY = c:GetPivot().Position.Y
 				break
 			end
 		end
 
-		local Tram = Deletable:FindFirstChild("Tram-Archives")
-		if Tram and Tram:IsA("Model") then
-			if Tram:GetAttribute("Glitched") == true then
-				table.insert(Anomalies, "Трамвай застрял в стене")
-			elseif BaseY then
-				local RelY = Tram:GetPivot().Position.Y - BaseY
-				if math.abs(RelY - 3.98) > 3.0 then
-					table.insert(Anomalies, "Трамвай смещён по высоте")
+		if BaseY then
+			for _, c in ipairs(DelChildren) do
+				if c:IsA("PVInstance") and ExpectedRelY[c.Name] then
+					if math.abs(c:GetPivot().UpVector.Y - 1) <= 0.05 then
+						local relY = c:GetPivot().Position.Y - BaseY
+						local diff = math.abs(relY - ExpectedRelY[c.Name])
+						if diff > 2.0 then
+							table.insert(Anomalies, string.format("Смещён по высоте: %s (ΔY = %.1f)", c.Name, diff))
+							table.insert(AnomalousObjects, { Object = c, Label = string.format("⚠️ СМЕЩЁН: %s", c.Name) })
+						end
+					end
 				end
 			end
 		end
 
-		local WetSign = Deletable:FindFirstChild("WetFloorSign")
-		if WetSign and WetSign:IsA("Model") and BaseY then
-			local RelY = WetSign:GetPivot().Position.Y - BaseY
-			if math.abs(RelY - 1.20) > 3.0 then
-				table.insert(Anomalies, "Табличка мокрого пола смещена")
+		-- Factor 4: Fixed & Attributes / Glitches
+		local Tram = Deletable:FindFirstChild("Tram-Archives")
+		if Tram and Tram:GetAttribute("Glitched") == true then
+			table.insert(Anomalies, "Трамвай застрял в стене")
+			table.insert(AnomalousObjects, { Object = Tram, Label = "⚠️ ГЛЮЧНЫЙ ТРАМВАЙ" })
+		end
+
+		if Fixed then
+			local board = Fixed:FindFirstChild("LargeMetroBoard")
+			if board then
+				if board:GetAttribute("Glitch") or board:GetAttribute("Anomaly") then
+					table.insert(Anomalies, "Табло метро искажено")
+					table.insert(AnomalousObjects, { Object = board, Label = "⚠️ ИСКАЖЕНИЕ ТАБЛО" })
+				elseif board:IsA("PVInstance") and math.abs(board:GetPivot().UpVector.Y - 1) > 0.05 then
+					table.insert(Anomalies, "Табло метро перевернуто")
+					table.insert(AnomalousObjects, { Object = board, Label = "⚠️ ТАБЛО ПЕРЕВЕРНУТО" })
+				end
 			end
 		end
 
-		-- Factor 3: Room/Door attributes
+		-- Factor 5: Room/Door attributes
 		if ActiveRoom:GetAttribute("Anomaly") == true or (BaseRoom and BaseRoom:GetAttribute("Anomaly") == true) then
 			table.insert(Anomalies, "Флаг аномалии комнаты")
 		end
@@ -2804,16 +2866,8 @@ task.spawn(function()
 			table.insert(Anomalies, "Флаг аномалии дверей")
 		end
 
-		-- Factor 4: Metro Board glitch
-		if Fixed then
-			local MetroBoard = Fixed:FindFirstChild("LargeMetroBoard")
-			if MetroBoard and (MetroBoard:GetAttribute("Glitch") or MetroBoard:GetAttribute("Anomaly")) then
-				table.insert(Anomalies, "Искажение табло метро")
-			end
-		end
-
 		if #Anomalies > 0 then
-			Functions.UpdateFMN_HUD("Anomaly", table.concat(Anomalies, ", "), ForwardDoor, BackwardDoor)
+			Functions.UpdateFMN_HUD("Anomaly", table.concat(Anomalies, ", "), ForwardDoor, BackwardDoor, AnomalousObjects)
 		else
 			Functions.UpdateFMN_HUD("Clean", "Все 14 объектов в норме (аномалий нет)", ForwardDoor, BackwardDoor)
 		end
