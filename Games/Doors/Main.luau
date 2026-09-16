@@ -1634,11 +1634,17 @@ Toggles.RemoveJamminMusic:OnChanged(function(Value)
 	end
 end)
 Toggles.RemoveInteractingSounds:OnChanged(function(Value)
-	local PS = Globals.MainUI.Initiator.Main_Game.PromptService
-	PS.Triggered.Volume   = Value and 0 or 0.04
-	PS.Holding.Volume     = Value and 0 or 0.1
-	PS.Notification.Volume = Value and 0 or 0.03
-	Globals.MainUI.Initiator.Main_Game.Reminder.Caption.Volume = Value and 0 or 0.1
+	pcall(function()
+		local PS = Globals.MainUI and Globals.MainUI:FindFirstChild("Initiator") and Globals.MainUI.Initiator:FindFirstChild("Main_Game") and Globals.MainUI.Initiator.Main_Game:FindFirstChild("PromptService")
+		if PS then
+			if PS:FindFirstChild("Triggered") then PS.Triggered.Volume = Value and 0 or 0.04 end
+			if PS:FindFirstChild("Holding") then PS.Holding.Volume = Value and 0 or 0.1 end
+			if PS:FindFirstChild("Notification") then PS.Notification.Volume = Value and 0 or 0.03 end
+		end
+		if Globals.MainUI.Initiator.Main_Game:FindFirstChild("Reminder") and Globals.MainUI.Initiator.Main_Game.Reminder:FindFirstChild("Caption") then
+			Globals.MainUI.Initiator.Main_Game.Reminder.Caption.Volume = Value and 0 or 0.1
+		end
+	end)
 end)
 
 Groupboxes.Visuals_LeftTab = Tabs.Visuals:AddLeftTabbox("Camera / Effects")
@@ -3328,11 +3334,17 @@ Functions.HandleCharacter = function(NewCharacter)
 		if Vignette then Vignette.Image = "Disabled" end
 	end
 	if Toggles.RemoveInteractingSounds.Value then
-		local PS = Globals.MainUI.Initiator.Main_Game.PromptService
-		PS.Triggered.Volume = 0
-		PS.Holding.Volume   = 0
-		PS.Notification.Volume = 0
-		Globals.MainUI.Initiator.Main_Game.Reminder.Caption.Volume = 0
+		pcall(function()
+			local PS = Globals.MainUI and Globals.MainUI:FindFirstChild("Initiator") and Globals.MainUI.Initiator:FindFirstChild("Main_Game") and Globals.MainUI.Initiator.Main_Game:FindFirstChild("PromptService")
+			if PS then
+				if PS:FindFirstChild("Triggered") then PS.Triggered.Volume = 0 end
+				if PS:FindFirstChild("Holding") then PS.Holding.Volume = 0 end
+				if PS:FindFirstChild("Notification") then PS.Notification.Volume = 0 end
+			end
+			if Globals.MainUI.Initiator.Main_Game:FindFirstChild("Reminder") and Globals.MainUI.Initiator.Main_Game.Reminder:FindFirstChild("Caption") then
+				Globals.MainUI.Initiator.Main_Game.Reminder.Caption.Volume = 0
+			end
+		end)
 	end
 	if Toggles.DisableEntityJumpscares.Value then
 		local JS = Globals.MainUI.Initiator.Main_Game.RemoteListener:FindFirstChild("Jumpscares")
@@ -5310,10 +5322,11 @@ Connections.Cleaner = Services.RunService.Heartbeat:Connect(function()
 	LastClean = tick()
 
 	for ArrayName, Array in Objects do
+		if ArrayName == "RoomPrompts" then continue end
 		local I = #Array
 		while I >= 1 do
 			local Object = Array[I]
-			if Object == nil or not Object:IsDescendantOf(Services.Workspace) then
+			if typeof(Object) ~= "Instance" or not Object:IsDescendantOf(Services.Workspace) then
 				table.remove(Array, I)
 				local Conn = ESPConnections[Object]
 				if Conn then
@@ -5478,6 +5491,7 @@ Library:OnUnload(function()
 	getgenv().Abysall = nil
 end)
 
-Abysall.Unload = function() Library:Unload() end\nwhile not Globals.MainUI do task.wait() end
+Abysall.Unload = function() Library:Unload() end
+while not Globals.MainUI do task.wait() end
 Abysall.Interface.ApplySettingsTab(Window)
 Functions.Notify({ Title = "Successfully loaded in " .. math.floor((tick() - LoadStart) * 1000) / 1000 .. " seconds." , Body = "Press '" .. tostring(Options.MenuKeybind.Value) .. "' to toggle the UI."})
