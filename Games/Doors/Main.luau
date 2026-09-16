@@ -2848,12 +2848,29 @@ task.spawn(function()
 		if Fixed then
 			local board = Fixed:FindFirstChild("LargeMetroBoard")
 			if board then
-				if board:GetAttribute("Glitch") or board:GetAttribute("Anomaly") then
+				local img = board:FindFirstChildWhichIsA("ImageLabel", true)
+				local isGlitchImg = img and img.Image ~= "" and img.Image ~= "rbxassetid://103473635179159"
+				if board:GetAttribute("Glitch") or board:GetAttribute("Anomaly") or isGlitchImg then
 					table.insert(Anomalies, "Табло метро искажено")
 					table.insert(AnomalousObjects, { Object = board, Label = "⚠️ ИСКАЖЕНИЕ ТАБЛО" })
 				elseif board:IsA("PVInstance") and math.abs(board:GetPivot().UpVector.Y - 1) > 0.05 then
 					table.insert(Anomalies, "Табло метро перевернуто")
 					table.insert(AnomalousObjects, { Object = board, Label = "⚠️ ТАБЛО ПЕРЕВЕРНУТО" })
+				end
+			end
+		end
+
+		-- Factor 5: Detail checks on plants and lights
+		for _, c in ipairs(DelChildren) do
+			if c.Name == "PottedPlant_Archives_Large" and not c:FindFirstChild("Leaves") then
+				table.insert(Anomalies, "У растения отсутствуют листья")
+				table.insert(AnomalousObjects, { Object = c, Label = "⚠️ РАСТЕНИЕ БЕЗ ЛИСТЬЕВ" })
+			end
+			if c.Name == "ArchivesCeilingLightNoPrefab" then
+				local pl = c:FindFirstChildWhichIsA("PointLight", true)
+				if pl and pl.Color.R > 0.85 and pl.Color.G < 0.2 and pl.Color.B < 0.2 then
+					table.insert(Anomalies, "Красный свет в лампе")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ КРАСНЫЙ СВЕТ" })
 				end
 			end
 		end
