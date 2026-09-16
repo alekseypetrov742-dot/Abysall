@@ -2468,7 +2468,7 @@ local function GetOrCreateFMN_HUD()
 	return Gui
 end
 
-Functions.UpdateFMN_HUD = function(HasAnomaly, Reason, FMNRoom)
+Functions.UpdateFMN_HUD = function(HasAnomaly, Reason, ActiveRoom, ForwardDoor, BackwardDoor)
 	local Gui = GetOrCreateFMN_HUD()
 	Gui.Enabled = true
 	local Frame = Gui:FindFirstChild("MainFrame")
@@ -2476,9 +2476,6 @@ Functions.UpdateFMN_HUD = function(HasAnomaly, Reason, FMNRoom)
 	local Stroke = Frame:FindFirstChild("BorderStroke")
 	local Status = Frame:FindFirstChild("Status")
 	local Detail = Frame:FindFirstChild("Detail")
-
-	local Entrance = FMNRoom and FMNRoom:FindFirstChild("RoomEntrance")
-	local VineDoors = FMNRoom and FMNRoom:FindFirstChild("ForgetMeNotVineDoors")
 
 	if HasAnomaly then
 		if Stroke then Stroke.Color = Color3.fromRGB(255, 45, 45) end
@@ -2488,12 +2485,12 @@ Functions.UpdateFMN_HUD = function(HasAnomaly, Reason, FMNRoom)
 		end
 		if Detail then Detail.Text = Reason or "Обнаружено несоответствие!" end
 
-		if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value and FMNRoom then
-			if Entrance then
-				Functions.AddESP({ Object = Entrance, Text = "НАЗАД (ВЕРНЫЙ ПУТЬ)", Color = Color3.fromRGB(50, 255, 50) })
+		if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value then
+			if BackwardDoor then
+				Functions.AddESP({ Object = BackwardDoor, Text = "НАЗАД (ВЕРНЫЙ ПУТЬ)", Color = Color3.fromRGB(50, 255, 50) })
 			end
-			if VineDoors then
-				Functions.AddESP({ Object = VineDoors, Text = "ВПЕРЁД (ОПАСНО: АНОМАЛИЯ)", Color = Color3.fromRGB(255, 45, 45) })
+			if ForwardDoor then
+				Functions.AddESP({ Object = ForwardDoor, Text = "ВПЕРЁД (ОПАСНО: АНОМАЛИЯ)", Color = Color3.fromRGB(255, 45, 45) })
 			end
 		end
 	else
@@ -2502,14 +2499,14 @@ Functions.UpdateFMN_HUD = function(HasAnomaly, Reason, FMNRoom)
 			Status.TextColor3 = Color3.fromRGB(65, 255, 65)
 			Status.Text = "✅ ВСЁ ЧИСТО! ➔ ИДИТЕ ВПЕРЁД (В ЦВЕТОЧНУЮ ДВЕРЬ)"
 		end
-		if Detail then Detail.Text = "Все 14 объектов и геометрия в норме (аномалий нет)" end
+		if Detail then Detail.Text = "Все 14 объектов на месте (аномалий нет)" end
 
-		if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value and FMNRoom then
-			if VineDoors then
-				Functions.AddESP({ Object = VineDoors, Text = "ВПЕРЁД (ВЕРНЫЙ ПУТЬ)", Color = Color3.fromRGB(50, 255, 50) })
+		if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value then
+			if ForwardDoor then
+				Functions.AddESP({ Object = ForwardDoor, Text = "ВПЕРЁД (ВЕРНЫЙ ПУТЬ)", Color = Color3.fromRGB(50, 255, 50) })
 			end
-			if Entrance then
-				Functions.AddESP({ Object = Entrance, Text = "НАЗАД (НЕВЕРНО: ЧИСТАЯ КОМНАТА)", Color = Color3.fromRGB(255, 45, 45) })
+			if BackwardDoor then
+				Functions.AddESP({ Object = BackwardDoor, Text = "НАЗАД (НЕВЕРНО: ЧИСТАЯ КОМНАТА)", Color = Color3.fromRGB(255, 45, 45) })
 			end
 		end
 	end
@@ -2526,8 +2523,6 @@ task.spawn(function()
 		["PottedPlant_Archives_Large"] = 4,
 	}
 
-	local LastPlayerPosition = nil
-
 	while task.wait(0.2) do
 		if not Toggles.ForgetMeNotHelper or not Toggles.ForgetMeNotHelper.Value then
 			if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
@@ -2541,36 +2536,76 @@ task.spawn(function()
 			continue
 		end
 
-		local FMNRoom = nil
+		-- 1. Resolve Active Room: prioritize player-specific clone folder in CurrentRooms (Upper Room!)
+		local ActiveRoom = nil
+		local BaseRoom = nil
 		if CurrentRooms then
 			for _, R in ipairs(CurrentRooms:GetChildren()) do
-				if R:GetAttribute("RawName") == "Archives_ForgetMeNotRoom" or R:FindFirstChild("ForgetMeNotVineDoors") then
-					FMNRoom = R
+				local pFolder = R:FindFirstChild(LocalPlayer.Name)
+				if pFolder and (pFolder:FindFirstChild("ForgetMeNotVineDoors") or pFolder:GetAttribute("RawName") == "Archives_ForgetMeNotRoom") then
+					ActiveRoom = pFolder
+					BaseRoom = R
 					break
+				end
+			end
+			if not ActiveRoom then
+				for _, R in ipairs(CurrentRooms:GetChildren()) do
+					if R:GetAttribute("RawName") == "Archives_ForgetMeNotRoom" or R:FindFirstChild("ForgetMeNotVineDoors") then
+						ActiveRoom = R
+						BaseRoom = R
+						break
+					end
 				end
 			end
 		end
 
-		if not FMNRoom then
+		if not ActiveRoom then
 			if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
 			continue
 		end
 
-		local Entrance = FMNRoom:FindFirstChild("RoomEntrance")
-		local VineDoors = FMNRoom:FindFirstChild("ForgetMeNotVineDoors")
+		-- 2. Identify Forward and Backward doors in ActiveRoom
+		local EntVoid = ActiveRoom:FindFirstChild("EntranceVoid") or ActiveRoom:FindFirstChild("RoomEntrance")
+		local ExitVoid = ActiveRoom:FindFirstChild("ExitVoid") or ActiveRoom:FindFirstChild("RoomExit")
+
+		local VineDoors = {}
+		for _, c in ipairs(ActiveRoom:GetChildren()) do
+			if c.Name == "ForgetMeNotVineDoors" then
+				table.insert(VineDoors, c)
+			end
+		end
+
+		local ForwardDoor = nil
+		local BackwardDoor = nil
+
+		if #VineDoors >= 2 and EntVoid and ExitVoid then
+			for _, d in ipairs(VineDoors) do
+				local dPos = d:GetPivot().Position
+				local dEnt = (dPos - EntVoid:GetPivot().Position).Magnitude
+				local dExit = (dPos - ExitVoid:GetPivot().Position).Magnitude
+				if dEnt < dExit then
+					BackwardDoor = d
+				else
+					ForwardDoor = d
+				end
+			end
+		elseif #VineDoors == 1 then
+			ForwardDoor = VineDoors[1]
+			BackwardDoor = EntVoid or ActiveRoom:FindFirstChild("RoomEntrance")
+		elseif #VineDoors >= 2 then
+			BackwardDoor = VineDoors[1]
+			ForwardDoor = VineDoors[2]
+		end
+
 		local MyPos = Root.Position
 
-		-- Generous room boundary check: ensures HUD stays active across all teleport cycles
+		-- Generous boundary check using ActiveRoom and doors
 		local InRoom = false
-		local CurrRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom"))
-		local FMNRoomNum = tonumber(FMNRoom.Name)
-		if CurrRoom and FMNRoomNum and (CurrRoom == FMNRoomNum or CurrRoom == FMNRoomNum + 1 or CurrRoom == FMNRoomNum - 1) then
+		if ForwardDoor and (MyPos - ForwardDoor:GetPivot().Position).Magnitude < 220 then
 			InRoom = true
-		elseif Entrance and (MyPos - Entrance.Position).Magnitude < 320 then
+		elseif BackwardDoor and (MyPos - BackwardDoor:GetPivot().Position).Magnitude < 220 then
 			InRoom = true
-		elseif VineDoors and (MyPos - VineDoors:GetPivot().Position).Magnitude < 320 then
-			InRoom = true
-		elseif (MyPos - FMNRoom:GetPivot().Position).Magnitude < 350 then
+		elseif (MyPos - ActiveRoom:GetPivot().Position).Magnitude < 280 then
 			InRoom = true
 		end
 
@@ -2579,24 +2614,22 @@ task.spawn(function()
 			continue
 		end
 
-		-- Teleport detection: When the player passes a door and gets teleported back to Entrance
-		if LastPlayerPosition and Entrance then
-			local DistToEnt = (MyPos - Entrance.Position).Magnitude
-			local OldDistToEnt = (LastPlayerPosition - Entrance.Position).Magnitude
-			if DistToEnt < 30 and OldDistToEnt > 65 then
-				-- Player just looped/teleported! Wait for room assets to settle
-				task.wait(0.25)
-			end
+		-- Clean up old ESP from base room doors if active in player clone
+		if ActiveRoom ~= BaseRoom and BaseRoom then
+			local BaseVineDoors = BaseRoom:FindFirstChild("ForgetMeNotVineDoors")
+			if BaseVineDoors then Functions.RemoveESP(BaseVineDoors) end
+			local BaseEnt = BaseRoom:FindFirstChild("RoomEntrance")
+			if BaseEnt then Functions.RemoveESP(BaseEnt) end
 		end
-		LastPlayerPosition = MyPos
 
-		local Assets = FMNRoom:FindFirstChild("Assets")
+		-- 3. Evaluate Anomalies in ActiveRoom
+		local Assets = ActiveRoom:FindFirstChild("Assets")
 		local Deletable = Assets and Assets:FindFirstChild("Deletable")
 		local Fixed = Assets and Assets:FindFirstChild("Fixed")
 
 		local Anomalies = {}
 
-		-- Check 1: Object counts in Deletable
+		-- Factor 1: Object counts in Deletable
 		local CurrentCounts = {}
 		if Deletable then
 			for _, c in ipairs(Deletable:GetChildren()) do
@@ -2618,34 +2651,25 @@ task.spawn(function()
 			end
 		end
 
-		-- Check 2: Physical anomalies (glitched train, displaced pillars or plants)
+		-- Factor 2: Tram Glitch attribute (no broken hardcoded global coordinates!)
 		if Deletable then
 			local Tram = Deletable:FindFirstChild("Tram-Archives")
 			if Tram and Tram:IsA("Model") then
-				local TramPivot = Tram:GetPivot().Position
-				if math.abs(TramPivot.Y - 7192.78) > 4 or Tram:GetAttribute("Glitched") == true then
-					table.insert(Anomalies, "Трамвай смещён / застрял в стене")
-				end
-			end
-
-			local Pillar = Deletable:FindFirstChild("Pillars")
-			if Pillar and Pillar:IsA("Model") then
-				local PillarPivot = Pillar:GetPivot().Position
-				if math.abs(PillarPivot.Y - 7195.5) > 3 then
-					table.insert(Anomalies, "Колонны смещены")
+				if Tram:GetAttribute("Glitched") == true then
+					table.insert(Anomalies, "Трамвай застрял в стене")
 				end
 			end
 		end
 
-		-- Check 3: Room-level or VineDoor attributes
-		if FMNRoom:GetAttribute("Anomaly") == true or FMNRoom:GetAttribute("IsAnomaly") == true then
+		-- Factor 3: Room/Door attributes
+		if ActiveRoom:GetAttribute("Anomaly") == true or (BaseRoom and BaseRoom:GetAttribute("Anomaly") == true) then
 			table.insert(Anomalies, "Флаг аномалии комнаты")
 		end
-		if VineDoors and (VineDoors:GetAttribute("Anomaly") == true or VineDoors:GetAttribute("IsAnomaly") == true) then
+		if ForwardDoor and (ForwardDoor:GetAttribute("Anomaly") == true or ForwardDoor:GetAttribute("IsAnomaly") == true) then
 			table.insert(Anomalies, "Флаг аномалии дверей")
 		end
 
-		-- Check 4: Lighting & Sign anomalies
+		-- Factor 4: Metro Board glitch
 		if Fixed then
 			local MetroBoard = Fixed:FindFirstChild("LargeMetroBoard")
 			if MetroBoard and (MetroBoard:GetAttribute("Glitch") or MetroBoard:GetAttribute("Anomaly")) then
@@ -2653,7 +2677,7 @@ task.spawn(function()
 			end
 		end
 
-		Functions.UpdateFMN_HUD(#Anomalies > 0, table.concat(Anomalies, ", "), FMNRoom)
+		Functions.UpdateFMN_HUD(#Anomalies > 0, table.concat(Anomalies, ", "), ActiveRoom, ForwardDoor, BackwardDoor)
 	end
 end)
 
