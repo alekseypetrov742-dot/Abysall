@@ -1057,6 +1057,168 @@ Functions.GetRandomCode = function()
     return NewCode
 end
 
+Functions.ClearClutterFromRoom = function(Room)
+	if not Room or not Room:IsA("Model") then return end
+	task.spawn(function()
+		for _, Desc in Room:GetDescendants() do
+			if Desc.Name == "FloorPapers" or Desc.Name == "FloorPaper" or Desc.Name == "PaperDebris" then
+				pcall(function() Desc:Destroy() end)
+			end
+		end
+	end)
+end
+
+Functions.DisableShadowsFromRoom = function(Room)
+	if not Room or not Room:IsA("Model") then return end
+	task.spawn(function()
+		for _, Desc in Room:GetDescendants() do
+			if Desc:IsA("BasePart") then
+				if Desc.CastShadow then
+					Desc.CastShadow = false
+				end
+			elseif Desc:IsA("Light") then
+				if Desc.Shadows then
+					Desc.Shadows = false
+				end
+			end
+		end
+	end)
+end
+
+Functions.OptimizeRoomPhysics = function(Room)
+	if not Room or not Room:IsA("Model") then return end
+	task.spawn(function()
+		for _, Desc in Room:GetDescendants() do
+			if Desc:IsA("BasePart") and Desc.Anchored then
+				if not Desc.CanCollide then
+					Desc.CanTouch = false
+					Desc.CanQuery = false
+				end
+			end
+		end
+	end)
+end
+
+Functions.ApplyRoomOptimizations = function(Room)
+	if not Room or not Room:IsA("Model") then return end
+	if Toggles.ClearDecorativeClutter and Toggles.ClearDecorativeClutter.Value then
+		Functions.ClearClutterFromRoom(Room)
+	end
+	if Toggles.DisableRoomShadows and Toggles.DisableRoomShadows.Value then
+		Functions.DisableShadowsFromRoom(Room)
+	end
+	if Toggles.OptimizePropsPhysics and Toggles.OptimizePropsPhysics.Value then
+		Functions.OptimizeRoomPhysics(Room)
+	end
+end
+
+Functions.PurgePastRooms = function(IsManual)
+	if not CurrentRooms then return end
+
+	local CurrentRoomNum = tonumber(LocalPlayer:GetAttribute("CurrentRoom")) or (LatestRoom and LatestRoom.Value)
+	if not CurrentRoomNum or CurrentRoomNum <= 0 then
+		if IsManual then
+			Functions.Notify({ Title = "Purge Inactive", Body = "Cannot purge rooms before starting the run." })
+		end
+		return
+	end
+
+	-- Safety: Check active Seek or entity chase
+	if Services.Workspace:FindFirstChild("SeekMoving")
+		or Services.Workspace:FindFirstChild("SeekMovingNewClone")
+		or Services.Workspace:FindFirstChild("ScaryWall") then
+		if IsManual then
+			Functions.Notify({ Title = "Purge Cancelled", Body = "Cannot purge rooms during an active chase." })
+		end
+		return
+	end
+
+	local KeepBehind = (Options.RoomsToKeepBehind and Options.RoomsToKeepBehind.Value) or 2
+	local MaxAllowedRoomToDelete = CurrentRoomNum - KeepBehind
+	if MaxAllowedRoomToDelete <= 0 then
+		if IsManual then
+			Functions.Notify({ Title = "Purge Inactive", Body = "All rooms behind are within the KeepBehind buffer." })
+		end
+		return
+	end
+
+	local Character = LocalPlayer.Character
+	local RootPart = Character and Character:FindFirstChild("HumanoidRootPart")
+	local PlayerPos = RootPart and RootPart.Position
+
+	local PurgedRooms = 0
+	local PurgedParts = 0
+
+	for _, Room in CurrentRooms:GetChildren() do
+		local RoomNum = tonumber(Room.Name)
+		if not RoomNum then continue end
+
+		-- Safety: never delete current room or rooms ahead
+		if RoomNum >= CurrentRoomNum then continue end
+
+		-- Safety: keep behind buffer
+		if RoomNum > MaxAllowedRoomToDelete then continue end
+
+		-- Safety: never delete special puzzle/boss rooms
+		if RoomNum == 50 or RoomNum == 100 or RoomNum == 150 or RoomNum == 200 then continue end
+
+		-- Safety: never delete Forget-Me-Not room if active or present
+		if Globals.FMN_ActiveRoom and RoomNum == Globals.FMN_ActiveRoom then continue end
+		if Room:FindFirstChild("ForgetMeNotVineDoors") or Room:GetAttribute("RawName") == "Archives_ForgetMeNotRoom" then continue end
+
+		-- Safety: Distance check (keep room if player is within 220 studs)
+		if PlayerPos then
+			local Near = false
+			local RoomPivot = Vector3.zero
+			pcall(function()
+				RoomPivot = Room:GetPivot().Position
+			end)
+			if (PlayerPos - RoomPivot).Magnitude < 220 then
+				Near = true
+			end
+			if not Near and Room:FindFirstChild("RoomExit") then
+				if (PlayerPos - Room.RoomExit.Position).Magnitude < 220 then
+					Near = true
+				end
+			end
+			if not Near and Room:FindFirstChild("RoomEntrance") then
+				if (PlayerPos - Room.RoomEntrance.Position).Magnitude < 220 then
+					Near = true
+				end
+			end
+			if Near then continue end
+		end
+
+		-- Count parts for telemetry
+		local PartsInRoom = 0
+		for _, Desc in Room:GetDescendants() do
+			if Desc:IsA("BasePart") then
+				PartsInRoom += 1
+			end
+		end
+
+		pcall(function()
+			Room:Destroy()
+		end)
+		PurgedRooms += 1
+		PurgedParts += PartsInRoom
+	end
+
+	if IsManual then
+		if PurgedRooms > 0 then
+			Functions.Notify({
+				Title = "World Purged",
+				Body = string.format("Removed %d past rooms (freed %d parts).", PurgedRooms, PurgedParts)
+			})
+		else
+			Functions.Notify({
+				Title = "World Clean",
+				Body = "No past rooms eligible for purge (all nearby or within buffer)."
+			})
+		end
+	end
+end
+
 local Window = Library:CreateWindow({
 	Title = "Abysall Hub",
 	Footer = "dsc.gg/abysallhub",
@@ -1313,6 +1475,78 @@ Groupboxes.Self_Misc:AddButton({
 		end
 	end
 })
+
+Groupboxes.General_Performance = Tabs.General:AddRightGroupbox("Performance / Anti-Lag")
+Groupboxes.General_Performance:AddToggle("AutoClearPastRooms", {
+	Text = "Auto Clear Past Rooms",
+	Default = true,
+	Tooltip = "Automatically despawns completed rooms behind you, dropping part count from 20k to ~3k."
+})
+Groupboxes.General_Performance:AddSlider("RoomsToKeepBehind", {
+	Text = "Keep Rooms Behind",
+	Default = 2,
+	Min = 1,
+	Max = 5,
+	Rounding = 0,
+	Tooltip = "Number of completed rooms to keep behind before despawning."
+})
+Groupboxes.General_Performance:AddDivider()
+Groupboxes.General_Performance:AddToggle("ClearDecorativeClutter", {
+	Text = "Clear Clutter (FloorPapers)",
+	Default = false,
+	Tooltip = "Removes decorative FloorPapers and small clutter meshes from rooms."
+})
+Groupboxes.General_Performance:AddToggle("DisableRoomShadows", {
+	Text = "Disable Room Shadows",
+	Default = false,
+	Tooltip = "Disables CastShadow on static room parts and lights to boost FPS."
+})
+Groupboxes.General_Performance:AddToggle("OptimizePropsPhysics", {
+	Text = "Optimize Props Physics",
+	Default = false,
+	Tooltip = "Disables CanTouch and collision queries on decorative/ceiling props to reduce physics engine throttle."
+})
+Groupboxes.General_Performance:AddDivider()
+Groupboxes.General_Performance:AddButton({
+	Text = "Purge Past Rooms Now",
+	Tooltip = "Manually purges all past rooms behind you right now.",
+	DoubleClick = false,
+	Func = function()
+		Functions.PurgePastRooms(true)
+	end
+})
+
+Toggles.AutoClearPastRooms:OnChanged(function(Value)
+	if Value then
+		task.spawn(function()
+			Functions.PurgePastRooms(false)
+		end)
+	end
+end)
+
+Toggles.ClearDecorativeClutter:OnChanged(function(Value)
+	if Value and CurrentRooms then
+		for _, Room in CurrentRooms:GetChildren() do
+			Functions.ClearClutterFromRoom(Room)
+		end
+	end
+end)
+
+Toggles.DisableRoomShadows:OnChanged(function(Value)
+	if Value and CurrentRooms then
+		for _, Room in CurrentRooms:GetChildren() do
+			Functions.DisableShadowsFromRoom(Room)
+		end
+	end
+end)
+
+Toggles.OptimizePropsPhysics:OnChanged(function(Value)
+	if Value and CurrentRooms then
+		for _, Room in CurrentRooms:GetChildren() do
+			Functions.OptimizeRoomPhysics(Room)
+		end
+	end
+end)
 
 Groupboxes.Exploits_Bypass = Tabs.Exploits:AddLeftGroupbox("Bypass")
 Groupboxes.Exploits_Bypass:AddToggle("BypassGiggle",         { Text = "Bypass Giggle",           Default = false, Tooltip = "Prevents 'Giggle' from attacking you." })
@@ -3128,6 +3362,14 @@ Connections.RoomsHandler = CurrentRooms.ChildAdded:Connect(function(Room)
 		if Object.Name == "StuckPart" then Object:Destroy() end
 	end
 
+	task.spawn(Functions.ApplyRoomOptimizations, Room)
+
+	if Toggles.AutoClearPastRooms and Toggles.AutoClearPastRooms.Value then
+		task.delay(1.5, function()
+			Functions.PurgePastRooms(false)
+		end)
+	end
+
 	task.spawn(Functions.HandleForgetMeNot, Room)
 
 	if Room:GetAttribute("RawName") and string.find(Room:GetAttribute("RawName"), "Eyestalk") then
@@ -3188,6 +3430,14 @@ Connections.RoomsHandler = CurrentRooms.ChildAdded:Connect(function(Room)
 			end
 			task.wait(0.25)
 		end
+	end
+end)
+
+Connections.PerformanceRoomHandler = LocalPlayer:GetAttributeChangedSignal("CurrentRoom"):Connect(function()
+	if Toggles.AutoClearPastRooms and Toggles.AutoClearPastRooms.Value then
+		task.delay(1, function()
+			Functions.PurgePastRooms(false)
+		end)
 	end
 end)
 
@@ -5633,6 +5883,26 @@ Connections.PromptFixer = Services.RunService.Heartbeat:Connect(function()
 	for _, Prompt in Objects.Prompts do
 		if Prompt:HasTag("DisableWhenEnabledOnClient") then
 			Prompt:RemoveTag("DisableWhenEnabledOnClient")
+		end
+	end
+end)
+
+task.spawn(function()
+	if CurrentRooms then
+		for _, Room in CurrentRooms:GetChildren() do
+			Functions.ApplyRoomOptimizations(Room)
+		end
+		if Toggles.AutoClearPastRooms and Toggles.AutoClearPastRooms.Value then
+			task.delay(2, function()
+				Functions.PurgePastRooms(false)
+			end)
+		end
+	end
+
+	while true do
+		task.wait(4)
+		if Toggles.AutoClearPastRooms and Toggles.AutoClearPastRooms.Value then
+			Functions.PurgePastRooms(false)
 		end
 	end
 end)
