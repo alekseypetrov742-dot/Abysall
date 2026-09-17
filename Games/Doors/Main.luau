@@ -2530,7 +2530,21 @@ Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor, Ano
 
 	local newTrackedAnoms = {}
 
-	if State == "Scanning" then
+	if State == "SnapshotSaved" then
+		if Stroke then Stroke.Color = Color3.fromRGB(150, 100, 255) end
+		if Status then
+			Status.TextColor3 = Color3.fromRGB(180, 140, 255)
+			Status.Text = "📸 СЛЕПОК ЭТАЛОННОЙ КОМНАТЫ СОХРАНЁН"
+		end
+		if Detail then Detail.Text = Reason or "Запомните комнату и войдите в цветочную дверь для старта" end
+
+		if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value then
+			if ForwardDoor then
+				Functions.SetOrUpdateESP(ForwardDoor, "СТАРТ ГОЛОВОЛОМКИ (ВОЙДИТЕ СЮДА)", Color3.fromRGB(180, 100, 255))
+			end
+		end
+
+	elseif State == "Scanning" then
 		if Stroke then Stroke.Color = Color3.fromRGB(255, 200, 50) end
 		if Status then
 			Status.TextColor3 = Color3.fromRGB(255, 200, 50)
@@ -2569,7 +2583,7 @@ Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor, Ano
 			Status.TextColor3 = Color3.fromRGB(65, 255, 65)
 			Status.Text = "✅ ВСЁ ЧИСТО! ➔ ИДИТЕ ВПЕРЁД (В ЦВЕТОЧНУЮ ДВЕРЬ)"
 		end
-		if Detail then Detail.Text = Reason or "Все 14 объектов в норме (аномалий нет)" end
+		if Detail then Detail.Text = Reason or "Все объекты совпадают со слепком комнаты (аномалий нет)" end
 
 		if Toggles.ForgetMeNotESP and Toggles.ForgetMeNotESP.Value then
 			if ForwardDoor then
@@ -2593,19 +2607,287 @@ Functions.UpdateFMN_HUD = function(State, Reason, ForwardDoor, BackwardDoor, Ano
 	Globals.FMN_LastAnomalousObjects = newTrackedAnoms
 end
 
--- Continuous Forget-Me-Not multi-factor anomaly evaluator & cycle tracker
+Globals.FMN_RoomSnapshot = nil
+
+Functions.CaptureFMN_RoomSnapshot = function(Room)
+	if not Room then return nil end
+	local Assets = Room:FindFirstChild("Assets")
+	if not Assets then return nil end
+	local Deletable = Assets:FindFirstChild("Deletable")
+	local Fixed = Assets:FindFirstChild("Fixed")
+	if not Deletable then return nil end
+
+	local Snapshot = {
+		RoomName = Room.Name,
+		Timestamp = tick(),
+		TotalObjects = 0,
+		TotalParts = 0,
+		DeletableCounts = {},
+		FixedCounts = {},
+		DeletableModels = {},
+		FixedModels = {},
+		SignatureColors = {},
+		FloorColor = nil,
+		FloorMaterial = nil,
+	}
+
+	local function scanFolder(folder, targetCounts, targetModels)
+		if not folder then return end
+		for _, model in ipairs(folder:GetChildren()) do
+			Snapshot.TotalObjects = Snapshot.TotalObjects + 1
+			targetCounts[model.Name] = (targetCounts[model.Name] or 0) + 1
+
+			local mData = {
+				Name = model.Name,
+				UpVectorY = model:IsA("PVInstance") and model:GetPivot().UpVector.Y or 1,
+				Parts = {},
+			}
+
+			for _, desc in ipairs(model:GetDescendants()) do
+				if desc:IsA("BasePart") then
+					Snapshot.TotalParts = Snapshot.TotalParts + 1
+					mData.Parts[desc.Name] = {
+						Color = desc.Color,
+						Material = desc.Material,
+						Transparency = desc.Transparency,
+						UpVectorY = desc.CFrame.UpVector.Y,
+					}
+				elseif desc:IsA("PointLight") then
+					mData.LightColor = desc.Color
+				elseif desc:IsA("ImageLabel") then
+					mData.Image = desc.Image
+				end
+			end
+
+			if not targetModels[model.Name] then
+				targetModels[model.Name] = {}
+			end
+			table.insert(targetModels[model.Name], mData)
+		end
+	end
+
+	scanFolder(Deletable, Snapshot.DeletableCounts, Snapshot.DeletableModels)
+	scanFolder(Fixed, Snapshot.FixedCounts, Snapshot.FixedModels)
+
+	local Parts = Room:FindFirstChild("Parts")
+	if Parts then
+		local Floor = Parts:FindFirstChild("Floor")
+		if Floor and Floor:IsA("BasePart") then
+			Snapshot.FloorColor = Floor.Color
+			Snapshot.FloorMaterial = Floor.Material
+		end
+	end
+
+	local sign = Deletable:FindFirstChild("WetFloorSign")
+	local signBase = sign and sign:FindFirstChild("Base")
+	if signBase then Snapshot.SignatureColors["WetFloorSign_Base"] = signBase.Color end
+
+	local plant = Deletable:FindFirstChild("PottedPlant_Archives_Large")
+	local plantLeaves = plant and plant:FindFirstChild("Leaves")
+	if plantLeaves then Snapshot.SignatureColors["Plant_Leaves"] = plantLeaves.Color end
+
+	local seat = Deletable:FindFirstChild("ArchivesWaitingSeats")
+	local seatPlastic = seat and seat:FindFirstChild("Plastic", true)
+	if seatPlastic then Snapshot.SignatureColors["Seat_Plastic"] = seatPlastic.Color end
+
+	local tram = Deletable:FindFirstChild("Tram-Archives")
+	local tramBase = tram and (tram:FindFirstChild("TramBase1") or tram:FindFirstChild("TramBase2"))
+	if tramBase then Snapshot.SignatureColors["Tram_Base"] = tramBase.Color end
+
+	return Snapshot
+end
+
+Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
+	local Anomalies = {}
+	local AnomalousObjects = {}
+
+	if not ActiveRoom or not Snapshot then
+		return Anomalies, AnomalousObjects
+	end
+
+	local Assets = ActiveRoom:FindFirstChild("Assets")
+	local Deletable = Assets and Assets:FindFirstChild("Deletable")
+	local Fixed = Assets and Assets:FindFirstChild("Fixed")
+	if not Deletable then
+		return Anomalies, AnomalousObjects
+	end
+
+	local curDelChildren = Deletable:GetChildren()
+	local curCounts = {}
+	for _, c in ipairs(curDelChildren) do
+		curCounts[c.Name] = (curCounts[c.Name] or 0) + 1
+	end
+
+	-- 1. Check counts against memory snapshot
+	for name, expCount in pairs(Snapshot.DeletableCounts) do
+		local curr = curCounts[name] or 0
+		if curr < expCount then
+			table.insert(Anomalies, string.format("Пропал: %s (%d/%d)", name, curr, expCount))
+		elseif curr > expCount then
+			table.insert(Anomalies, string.format("Лишний: %s (%d/%d)", name, curr, expCount))
+		end
+	end
+	for name in pairs(curCounts) do
+		if not Snapshot.DeletableCounts[name] then
+			table.insert(Anomalies, string.format("Чужеродный объект: %s", name))
+			for _, c in ipairs(curDelChildren) do
+				if c.Name == name then
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЛИШНИЙ: " .. name })
+				end
+			end
+		end
+	end
+
+	-- 2. Check Tilt / Rotation on all models
+	for _, c in ipairs(curDelChildren) do
+		if c:IsA("PVInstance") then
+			local cf = c:GetPivot()
+			if math.abs(cf.UpVector.Y - 1) > 0.05 then
+				local angle = math.deg(math.acos(math.clamp(cf.UpVector.Y, -1, 1)))
+				table.insert(Anomalies, string.format("Опрокинут/наклонён: %s (%.0f°)", c.Name, angle))
+				table.insert(AnomalousObjects, { Object = c, Label = string.format("⚠️ ОПРОКИНУТ: %s (%.0f°)", c.Name, angle) })
+			end
+		end
+		if c.Name == "ArchivesWaitingSeats" then
+			for _, sc in ipairs(c:GetChildren()) do
+				if sc:IsA("PVInstance") and sc.Name:find("Seat") then
+					local scf = sc:GetPivot()
+					if math.abs(scf.UpVector.Y - 1) > 0.05 and math.abs(c:GetPivot().UpVector.Y - 1) <= 0.05 then
+						table.insert(Anomalies, "Сиденье опрокинуто на скамейке")
+						table.insert(AnomalousObjects, { Object = sc, Label = "⚠️ ОПРОКИНУТОЕ СИДЕНЬЕ" })
+					end
+				end
+			end
+		end
+	end
+
+	-- 3. Check ANY color or material change across all parts of all models!
+	for _, c in ipairs(curDelChildren) do
+		local snapModelList = Snapshot.DeletableModels[c.Name]
+		local snapModel = snapModelList and snapModelList[1]
+
+		for _, desc in ipairs(c:GetDescendants()) do
+			if desc:IsA("BasePart") then
+				local snapPart = snapModel and snapModel.Parts[desc.Name]
+				if snapPart then
+					local cDiff = math.abs(desc.Color.R - snapPart.Color.R) + math.abs(desc.Color.G - snapPart.Color.G) + math.abs(desc.Color.B - snapPart.Color.B)
+					if cDiff > 0.18 then
+						table.insert(Anomalies, string.format("Изменён цвет %s у %s", desc.Name, c.Name))
+						table.insert(AnomalousObjects, { Object = c, Label = string.format("⚠️ ЦВЕТ: %s", desc.Name) })
+						break
+					end
+					if desc.Material ~= snapPart.Material then
+						table.insert(Anomalies, string.format("Изменён материал %s (%s)", desc.Name, desc.Material.Name))
+						table.insert(AnomalousObjects, { Object = c, Label = string.format("⚠️ МАТЕРИАЛ: %s", desc.Material.Name) })
+						break
+					end
+			end
+			elseif desc:IsA("PointLight") then
+				if desc.Color.R > 0.85 and desc.Color.G < 0.2 and desc.Color.B < 0.2 then
+					table.insert(Anomalies, "Красный свет в лампе")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ КРАСНЫЙ СВЕТ" })
+				end
+			end
+		end
+
+		-- Explicit signature checks for extra safety
+		if c.Name == "WetFloorSign" then
+			local base = c:FindFirstChild("Base")
+			if base and (base.Color.B > base.Color.R or base.Color.B > base.Color.G or base.Color.R < 0.45) then
+				if not table.find(Anomalies, "Цвет таблички изменён (не жёлтый)") then
+					table.insert(Anomalies, "Цвет таблички изменён (не жёлтый)")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ ТАБЛИЧКИ ИЗМЕНЁН" })
+				end
+			end
+		elseif c.Name == "PottedPlant_Archives_Large" then
+			local leaves = c:FindFirstChild("Leaves")
+			if not leaves then
+				table.insert(Anomalies, "У растения отсутствуют листья")
+				table.insert(AnomalousObjects, { Object = c, Label = "⚠️ РАСТЕНИЕ БЕЗ ЛИСТЬЕВ" })
+			elseif leaves.Color.G <= leaves.Color.R or leaves.Color.G <= leaves.Color.B then
+				if not table.find(Anomalies, "Цвет листьев изменён (не зелёный)") then
+					table.insert(Anomalies, "Цвет листьев изменён (не зелёный)")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ ЛИСТЬЕВ ИЗМЕНЁН" })
+				end
+			end
+		elseif c.Name == "ArchivesWaitingSeats" then
+			local plastic = c:FindFirstChild("Plastic", true)
+			if plastic and (plastic.Color.B <= plastic.Color.G or plastic.Color.B <= plastic.Color.R) then
+				if not table.find(Anomalies, "Цвет сидений изменён (не синий)") then
+					table.insert(Anomalies, "Цвет сидений изменён (не синий)")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ СИДЕНИЙ ИЗМЕНЁН" })
+				end
+			end
+		elseif c.Name == "Tram-Archives" then
+			local tb = c:FindFirstChild("TramBase1") or c:FindFirstChild("TramBase2")
+			if tb and tb.Color.G > tb.Color.B then
+				if not table.find(Anomalies, "Цвет поезда изменён (зелёный)") then
+					table.insert(Anomalies, "Цвет поезда изменён (зелёный)")
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ ПОЕЗДА ИЗМЕНЁН" })
+				end
+			end
+		end
+	end
+
+	-- 4. Check Fixed Models (LargeMetroBoard)
+	if Fixed then
+		local board = Fixed:FindFirstChild("LargeMetroBoard")
+		if board then
+			local img = board:FindFirstChildWhichIsA("ImageLabel", true)
+			local isGlitchImg = img and img.Image ~= "" and img.Image ~= "rbxassetid://103473635179159"
+			if board:GetAttribute("Glitch") or board:GetAttribute("Anomaly") or isGlitchImg then
+				table.insert(Anomalies, "Табло метро искажено")
+				table.insert(AnomalousObjects, { Object = board, Label = "⚠️ ИСКАЖЕНИЕ ТАБЛО" })
+			elseif board:IsA("PVInstance") and math.abs(board:GetPivot().UpVector.Y - 1) > 0.05 then
+				table.insert(Anomalies, "Табло метро перевернуто")
+				table.insert(AnomalousObjects, { Object = board, Label = "⚠️ ТАБЛО ПЕРЕВЕРНУТО" })
+			end
+		end
+	end
+
+	-- 5. Floating / Sunk checks
+	local ExpectedRelY = {
+		["ArchivesWaitingSeats"] = 0.0,
+		["WetFloorSign"] = 1.20,
+		["PottedPlant_Archives_Large"] = 0.47,
+		["Tram-Archives"] = 3.98,
+		["Pillars"] = 6.70,
+		["ArchivesCeilingLightNoPrefab"] = 17.85,
+	}
+	local BaseY = nil
+	for _, c in ipairs(curDelChildren) do
+		if c.Name == "ArchivesWaitingSeats" and c:IsA("PVInstance") and math.abs(c:GetPivot().UpVector.Y - 1) <= 0.05 then
+			BaseY = c:GetPivot().Position.Y
+			break
+		end
+	end
+	if BaseY then
+		for _, c in ipairs(curDelChildren) do
+			if c:IsA("PVInstance") and ExpectedRelY[c.Name] then
+				if math.abs(c:GetPivot().UpVector.Y - 1) <= 0.05 then
+					local relY = c:GetPivot().Position.Y - BaseY
+					local diff = math.abs(relY - ExpectedRelY[c.Name])
+					if diff > 2.0 then
+						table.insert(Anomalies, string.format("Смещён по высоте: %s (ΔY = %.1f)", c.Name, diff))
+						table.insert(AnomalousObjects, { Object = c, Label = string.format("⚠️ СМЕЩЁН: %s", c.Name) })
+					end
+				end
+			end
+		end
+	end
+
+	-- 6. Room attributes
+	if ActiveRoom:GetAttribute("Anomaly") == true then
+		table.insert(Anomalies, "Флаг аномалии комнаты")
+	end
+
+	return Anomalies, AnomalousObjects
+end
+
+-- Continuous Forget-Me-Not memory snapshot engine & cycle tracker
 task.spawn(function()
 	Globals.FMN_LoopToken = (Globals.FMN_LoopToken or 0) + 1
 	local MyToken = Globals.FMN_LoopToken
-
-	local ExpectedCounts = {
-		["Tram-Archives"] = 1,
-		["WetFloorSign"] = 1,
-		["Pillars"] = 1,
-		["ArchivesCeilingLightNoPrefab"] = 3,
-		["ArchivesWaitingSeats"] = 4,
-		["PottedPlant_Archives_Large"] = 4,
-	}
 
 	local LastTeleportTime = 0
 	local LastPlayerPos = nil
@@ -2632,21 +2914,44 @@ task.spawn(function()
 
 		local MyPos = Root.Position
 
-		-- 1. Find Active Room: prioritize player-specific upper clone folder
+		-- 1. ISOLATE CURRENT ROOM ONLY: Never touch past rooms!
+		local CurrentRoomNum = LocalPlayer:GetAttribute("CurrentRoom")
+		if not CurrentRoomNum and Services.ReplicatedStorage:FindFirstChild("GameData") and Services.ReplicatedStorage.GameData:FindFirstChild("LatestRoom") then
+			CurrentRoomNum = Services.ReplicatedStorage.GameData.LatestRoom.Value
+		end
+
 		local ActiveRoom = nil
 		local BaseRoom = nil
-		if CurrentRooms then
-			for _, R in ipairs(CurrentRooms:GetChildren()) do
+
+		if CurrentRooms and CurrentRoomNum then
+			local R = CurrentRooms:FindFirstChild(tostring(CurrentRoomNum))
+			if R then
 				local pFolder = R:FindFirstChild(LocalPlayer.Name)
 				if pFolder and (pFolder:FindFirstChild("ForgetMeNotVineDoors") or pFolder:GetAttribute("RawName") == "Archives_ForgetMeNotRoom") then
 					ActiveRoom = pFolder
 					BaseRoom = R
-					break
+				elseif R:GetAttribute("RawName") == "Archives_ForgetMeNotRoom" or R:FindFirstChild("ForgetMeNotVineDoors") then
+					ActiveRoom = R
+					BaseRoom = R
 				end
 			end
-			if not ActiveRoom then
-				for _, R in ipairs(CurrentRooms:GetChildren()) do
-					if R:GetAttribute("RawName") == "Archives_ForgetMeNotRoom" or R:FindFirstChild("ForgetMeNotVineDoors") then
+		end
+
+		-- Strict position fallback (only if within 160 studs)
+		if not ActiveRoom and CurrentRooms then
+			for _, R in ipairs(CurrentRooms:GetChildren()) do
+				local pFolder = R:FindFirstChild(LocalPlayer.Name)
+				if pFolder and (pFolder:FindFirstChild("ForgetMeNotVineDoors") or pFolder:GetAttribute("RawName") == "Archives_ForgetMeNotRoom") then
+					local floor = pFolder:FindFirstChild("Floor", true) or pFolder:FindFirstChildWhichIsA("BasePart", true)
+					if floor and (MyPos - floor.Position).Magnitude < 160 then
+						ActiveRoom = pFolder
+						BaseRoom = R
+						break
+					end
+				end
+				if not ActiveRoom and (R:GetAttribute("RawName") == "Archives_ForgetMeNotRoom" or R:FindFirstChild("ForgetMeNotVineDoors")) then
+					local floor = R:FindFirstChild("Floor", true) or R:FindFirstChildWhichIsA("BasePart", true)
+					if floor and (MyPos - floor.Position).Magnitude < 160 then
 						ActiveRoom = R
 						BaseRoom = R
 						break
@@ -2656,6 +2961,7 @@ task.spawn(function()
 		end
 
 		if not ActiveRoom then
+			Globals.FMN_RoomSnapshot = nil
 			if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
 			if WasInFMN then
 				Functions.ClearFMN_ESP()
@@ -2717,7 +3023,7 @@ task.spawn(function()
 			ForwardDoor = VineDoors[2]
 		end
 
-		-- 3. Room boundary check: safe against Folder (no direct Folder:GetPivot call!)
+		-- 3. Boundary check
 		local InRoom = false
 		if ForwardDoor and (MyPos - ForwardDoor:GetPivot().Position).Magnitude < 220 then
 			InRoom = true
@@ -2730,6 +3036,7 @@ task.spawn(function()
 		end
 
 		if not InRoom then
+			Globals.FMN_RoomSnapshot = nil
 			if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
 			if WasInFMN then
 				Functions.ClearFMN_ESP()
@@ -2763,199 +3070,37 @@ task.spawn(function()
 			continue
 		end
 
-		-- 5. Evaluate Anomalies in ActiveRoom
+		-- 5. MEMORY SNAPSHOT & CYCLE EVALUATION
+		if not Globals.FMN_RoomSnapshot or Globals.FMN_RoomSnapshot.RoomName ~= BaseRoom.Name then
+			Globals.FMN_RoomSnapshot = Functions.CaptureFMN_RoomSnapshot(BaseRoom)
+		end
+
+		-- If player is currently in the base room (cycle 0, before entering flower door)
+		if ActiveRoom == BaseRoom then
+			local snap = Globals.FMN_RoomSnapshot
+			local detail = snap and string.format("Сохранено объектов: %d (деталей: %d). Запомните комнату и войдите в дверь.", snap.TotalObjects, snap.TotalParts) or "Эталонная комната сохранена в память."
+			Functions.UpdateFMN_HUD("SnapshotSaved", detail, ForwardDoor, BackwardDoor)
+			continue
+		end
+
+		-- If player is in minigame puzzle room (inside LocalPlayer.Name folder)
 		local Assets = ActiveRoom:FindFirstChild("Assets")
 		local Deletable = Assets and Assets:FindFirstChild("Deletable")
-		local Fixed = Assets and Assets:FindFirstChild("Fixed")
-
 		local DelChildren = Deletable and Deletable:GetChildren() or {}
+
 		if #DelChildren < 8 then
 			Functions.UpdateFMN_HUD("Scanning", string.format("Загрузка объектов (%d/14)...", #DelChildren), ForwardDoor, BackwardDoor)
 			continue
 		end
 
-		local ExpectedRelY = {
-			["ArchivesWaitingSeats"] = 0.0,
-			["WetFloorSign"] = 1.20,
-			["PottedPlant_Archives_Large"] = 0.47,
-			["Tram-Archives"] = 3.98,
-			["Pillars"] = 6.70,
-			["ArchivesCeilingLightNoPrefab"] = 17.85,
-		}
-
-		local Anomalies = {}
-		local AnomalousObjects = {}
-
-		-- Factor 1: Object counts in Deletable
-		local CurrentCounts = {}
-		for _, c in ipairs(DelChildren) do
-			CurrentCounts[c.Name] = (CurrentCounts[c.Name] or 0) + 1
-		end
-
-		for name, expCount in pairs(ExpectedCounts) do
-			local curr = CurrentCounts[name] or 0
-			if curr < expCount then
-				table.insert(Anomalies, string.format("Пропал: %s (%d/%d)", name, curr, expCount))
-			elseif curr > expCount then
-				table.insert(Anomalies, string.format("Лишний: %s (%d/%d)", name, curr, expCount))
-			end
-		end
-		for name in pairs(CurrentCounts) do
-			if not ExpectedCounts[name] then
-				table.insert(Anomalies, string.format("Чужеродный объект: %s", name))
-				for _, c in ipairs(DelChildren) do
-					if c.Name == name then
-						table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЛИШНИЙ: " .. name })
-					end
-				end
-			end
-		end
-
-		-- Factor 2: Tilt / Knocked over / Inverted checks (UpVector.Y)
-		for _, c in ipairs(DelChildren) do
-			if c:IsA("PVInstance") then
-				local cf = c:GetPivot()
-				-- In normal room, all objects are strictly upright with UpVector.Y == 1 (or within 0.05)
-				if math.abs(cf.UpVector.Y - 1) > 0.05 then
-					local angle = math.deg(math.acos(math.clamp(cf.UpVector.Y, -1, 1)))
-					table.insert(Anomalies, string.format("Опрокинут/наклонён: %s (%.0f°)", c.Name, angle))
-					table.insert(AnomalousObjects, { Object = c, Label = string.format("⚠️ ОПРОКИНУТ: %s (%.0f°)", c.Name, angle) })
-				end
-			end
-			-- Check individual seats on benches
-			if c.Name == "ArchivesWaitingSeats" then
-				for _, sc in ipairs(c:GetChildren()) do
-					if sc:IsA("PVInstance") and sc.Name:find("Seat") then
-						local scf = sc:GetPivot()
-						if math.abs(scf.UpVector.Y - 1) > 0.05 and math.abs(c:GetPivot().UpVector.Y - 1) <= 0.05 then
-							table.insert(Anomalies, string.format("Сиденье опрокинуто на %s", sc.Name))
-							table.insert(AnomalousObjects, { Object = sc, Label = "⚠️ ОПРОКИНУТОЕ СИДЕНЬЕ" })
-						end
-					end
-				end
-			end
-		end
-
-		-- Factor 3: BaseY and Floating/Sunk checks
-		local BaseY = nil
-		for _, c in ipairs(DelChildren) do
-			if c.Name == "ArchivesWaitingSeats" and c:IsA("PVInstance") and math.abs(c:GetPivot().UpVector.Y - 1) <= 0.05 then
-				BaseY = c:GetPivot().Position.Y
-				break
-			end
-		end
-
-		if BaseY then
-			for _, c in ipairs(DelChildren) do
-				if c:IsA("PVInstance") and ExpectedRelY[c.Name] then
-					if math.abs(c:GetPivot().UpVector.Y - 1) <= 0.05 then
-						local relY = c:GetPivot().Position.Y - BaseY
-						local diff = math.abs(relY - ExpectedRelY[c.Name])
-						if diff > 2.0 then
-							table.insert(Anomalies, string.format("Смещён по высоте: %s (ΔY = %.1f)", c.Name, diff))
-							table.insert(AnomalousObjects, { Object = c, Label = string.format("⚠️ СМЕЩЁН: %s", c.Name) })
-						end
-					end
-				end
-			end
-		end
-
-		-- Factor 4: Fixed & Attributes / Glitches
-		local Tram = Deletable:FindFirstChild("Tram-Archives")
-		if Tram and Tram:GetAttribute("Glitched") == true then
-			table.insert(Anomalies, "Трамвай застрял в стене")
-			table.insert(AnomalousObjects, { Object = Tram, Label = "⚠️ ГЛЮЧНЫЙ ТРАМВАЙ" })
-		end
-
-		if Fixed then
-			local board = Fixed:FindFirstChild("LargeMetroBoard")
-			if board then
-				local img = board:FindFirstChildWhichIsA("ImageLabel", true)
-				local isGlitchImg = img and img.Image ~= "" and img.Image ~= "rbxassetid://103473635179159"
-				if board:GetAttribute("Glitch") or board:GetAttribute("Anomaly") or isGlitchImg then
-					table.insert(Anomalies, "Табло метро искажено")
-					table.insert(AnomalousObjects, { Object = board, Label = "⚠️ ИСКАЖЕНИЕ ТАБЛО" })
-				elseif board:IsA("PVInstance") and math.abs(board:GetPivot().UpVector.Y - 1) > 0.05 then
-					table.insert(Anomalies, "Табло метро перевернуто")
-					table.insert(AnomalousObjects, { Object = board, Label = "⚠️ ТАБЛО ПЕРЕВЕРНУТО" })
-				end
-			end
-		end
-
-		-- Factor 5: Detail checks on colors, palette swaps, plants, and lights
-		for _, c in ipairs(DelChildren) do
-			if c.Name == "WetFloorSign" then
-				local base = c:FindFirstChild("Base")
-				if base and (base.Color.B > base.Color.R or base.Color.B > base.Color.G or base.Color.R < 0.45) then
-					table.insert(Anomalies, "Цвет таблички изменён (не жёлтый)")
-					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ ТАБЛИЧКИ ИЗМЕНЁН" })
-				end
-			elseif c.Name == "PottedPlant_Archives_Large" then
-				local leaves = c:FindFirstChild("Leaves")
-				if not leaves then
-					table.insert(Anomalies, "У растения отсутствуют листья")
-					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ РАСТЕНИЕ БЕЗ ЛИСТЬЕВ" })
-				elseif leaves.Color.G <= leaves.Color.R or leaves.Color.G <= leaves.Color.B then
-					table.insert(Anomalies, "Цвет листьев изменён (не зелёный)")
-					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ ЛИСТЬЕВ ИЗМЕНЁН" })
-				end
-			elseif c.Name == "ArchivesWaitingSeats" then
-				local plastic = c:FindFirstChild("Plastic", true)
-				if plastic and (plastic.Color.B <= plastic.Color.G or plastic.Color.B <= plastic.Color.R) then
-					table.insert(Anomalies, "Цвет сидений изменён (не синий)")
-					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ СИДЕНИЙ ИЗМЕНЁН" })
-				end
-			elseif c.Name == "Tram-Archives" then
-				local tb = c:FindFirstChild("TramBase1") or c:FindFirstChild("TramBase2")
-				if tb and tb.Color.G > tb.Color.B then
-					table.insert(Anomalies, "Цвет поезда изменён (зелёный)")
-					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЦВЕТ ПОЕЗДА ИЗМЕНЁН" })
-				end
-			elseif c.Name == "ArchivesCeilingLightNoPrefab" then
-				local pl = c:FindFirstChildWhichIsA("PointLight", true)
-				if pl and pl.Color.R > 0.85 and pl.Color.G < 0.2 and pl.Color.B < 0.2 then
-					table.insert(Anomalies, "Красный свет в лампе")
-					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ КРАСНЫЙ СВЕТ" })
-				end
-			end
-		end
-
-		-- Factor 6: Direct comparison with BaseRoom (Differential Check against original template)
-		if BaseRoom and BaseRoom ~= ActiveRoom then
-			local BaseAssets = BaseRoom:FindFirstChild("Assets")
-			local BaseDeletable = BaseAssets and BaseAssets:FindFirstChild("Deletable")
-			if BaseDeletable then
-				local baseDelChildren = BaseDeletable:GetChildren()
-				if #baseDelChildren > 0 and #DelChildren ~= #baseDelChildren then
-					table.insert(Anomalies, string.format("Количество объектов отличается от оригинала (%d != %d)", #DelChildren, #baseDelChildren))
-				end
-				local baseSign = BaseDeletable:FindFirstChild("WetFloorSign")
-				local curSign = Deletable:FindFirstChild("WetFloorSign")
-				if baseSign and curSign then
-					local bPart = baseSign:FindFirstChild("Base")
-					local cPart = curSign:FindFirstChild("Base")
-					if bPart and cPart and math.abs(bPart.Color.B - cPart.Color.B) > 0.15 then
-						if not table.find(Anomalies, "Цвет таблички изменён (не жёлтый)") then
-							table.insert(Anomalies, "Цвет таблички отличается от оригинала")
-							table.insert(AnomalousObjects, { Object = curSign, Label = "⚠️ ОТЛИЧИЕ ОТ ОРИГИНАЛА" })
-						end
-					end
-				end
-			end
-		end
-
-		-- Factor 7: Room/Door attributes
-		if ActiveRoom:GetAttribute("Anomaly") == true or (BaseRoom and BaseRoom:GetAttribute("Anomaly") == true) then
-			table.insert(Anomalies, "Флаг аномалии комнаты")
-		end
-		if ForwardDoor and (ForwardDoor:GetAttribute("Anomaly") == true or ForwardDoor:GetAttribute("IsAnomaly") == true) then
-			table.insert(Anomalies, "Флаг аномалии дверей")
-		end
+		local Anomalies, AnomalousObjects = Functions.CompareFMN_Snapshot(ActiveRoom, Globals.FMN_RoomSnapshot)
 
 		if #Anomalies > 0 then
 			Functions.UpdateFMN_HUD("Anomaly", table.concat(Anomalies, " • "), ForwardDoor, BackwardDoor, AnomalousObjects)
 		else
-			Functions.UpdateFMN_HUD("Clean", "Все 14 объектов в норме (аномалий нет)", ForwardDoor, BackwardDoor)
+			local snap = Globals.FMN_RoomSnapshot
+			local countStr = snap and string.format("Все %d объектов (%d деталей) совпадают со слепком", snap.TotalObjects, snap.TotalParts) or "Все объекты совпадают со слепком комнаты"
+			Functions.UpdateFMN_HUD("Clean", countStr .. " (аномалий нет)", ForwardDoor, BackwardDoor)
 		end
 	end
 end)
