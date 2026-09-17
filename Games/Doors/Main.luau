@@ -950,6 +950,9 @@ Functions.AddESP = function(ESPOptions, RoomBased)
 		end)
 	else
 		Abysall.ESPLibrary:AddESP(ESPOptions)
+		Object.Destroying:Once(function()
+			Functions.RemoveESP(Object)
+		end)
 	end
 end
 
@@ -964,6 +967,26 @@ Functions.UpdateHonchoESP = function()
 		end
 	end
 
+	-- Check if player is holding or carrying a Honcho box
+	local heldBoxID = nil
+	if Character then
+		for _, tool in ipairs(Character:GetChildren()) do
+			if tool:IsA("Tool") then
+				heldBoxID = tool:GetAttribute("Tool_BoxID") or tool:GetAttribute("BoxID")
+				if heldBoxID then break end
+			end
+		end
+	end
+	if not heldBoxID and LocalPlayer and LocalPlayer:FindFirstChild("Backpack") then
+		for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+			if tool:IsA("Tool") then
+				heldBoxID = tool:GetAttribute("Tool_BoxID") or tool:GetAttribute("BoxID")
+				if heldBoxID then break end
+			end
+		end
+	end
+
+	-- 1. Highlight storage boxes in room
 	for _, Box in Objects.HonchoBoxes do
 		if Box and Box.Parent then
 			local toolBoxID = Box:GetAttribute("Tool_BoxID")
@@ -973,6 +996,26 @@ Functions.UpdateHonchoESP = function()
 				end
 			else
 				Functions.RemoveESP(Box)
+			end
+		end
+	end
+
+	-- 2. Highlight deposits (showing player WHERE to put the box!)
+	for _, Deposit in Objects.HonchoDeposits do
+		if Deposit and Deposit.Parent then
+			local depID = Deposit:GetAttribute("BoxID")
+			if Toggles.HonchoBoxESPToggle and Toggles.HonchoBoxESPToggle.Value then
+				local text = "Honcho Deposit"
+				local color = Color3.fromRGB(0, 255, 120)
+				if heldBoxID and depID and depID == heldBoxID then
+					text = ">>> PUT BOX HERE! <<<"
+					color = Color3.fromRGB(255, 220, 0)
+				elseif depID then
+					text = "Deposit [ID: " .. tostring(depID) .. "]"
+				end
+				Functions.AddESP({ Object = Deposit, Text = text, Color = color })
+			else
+				Functions.RemoveESP(Deposit)
 			end
 		end
 	end
@@ -4178,26 +4221,53 @@ Functions.HandleCharacter = function(NewCharacter)
 		end
 	end)
 
-	Connections.AnimationHandler = Character.ChildAdded:Connect(function()
+	Globals.ToolAnimationCache = Globals.ToolAnimationCache or {}
+
+	Connections.AnimationHandler = Character.ChildAdded:Connect(function(Child)
+		if not Child or not Child:IsA("Tool") then return end
+
+		if Functions.UpdateHonchoESP and Toggles.HonchoBoxESPToggle and Toggles.HonchoBoxESPToggle.Value then
+			task.spawn(Functions.UpdateHonchoESP)
+		end
+
 		local ToolNames = { "Lockpick","Shears","SkeletonKey","Key","GeneratorFuse","KeyElectrical","KeyBackdoor","KeyIron", "Multitool" }
-		local Tool
+		local Tool = nil
 		for _, Name in ToolNames do
-			Tool = Character:FindFirstChild(Name)
-			if Tool then break end
+			if Child.Name == Name then
+				Tool = Child
+				break
+			end
 		end
 		if not Tool then return end
 
+		local cached = Globals.ToolAnimationCache[Tool.Name]
+		if cached then
+			Globals.UseAnimation = cached.Use
+			Globals.UseAnimationBreak = cached.Break
+			return
+		end
+
 		local UseAnim = Tool:FindFirstChild("use", true) or Tool:FindFirstChild("promptanim", true)
+		local LoadedUse = nil
 		if UseAnim then
-			UseAnim = Humanoid:LoadAnimation(UseAnim)
-			UseAnim.Priority = Enum.AnimationPriority.Action4
-			Globals.UseAnimation = UseAnim
+			LoadedUse = Humanoid:LoadAnimation(UseAnim)
+			LoadedUse.Priority = Enum.AnimationPriority.Action4
+			Globals.UseAnimation = LoadedUse
 		end
 		local UseAnimBreak = Tool:FindFirstChild("usefinish", true) or Tool:FindFirstChild("promptanimend", true) or Tool:FindFirstChild("lockpickuse", true)
+		local LoadedBreak = nil
 		if UseAnimBreak then
-			UseAnimBreak = Humanoid:LoadAnimation(UseAnimBreak)
-			UseAnimBreak.Priority = Enum.AnimationPriority.Action4
-			Globals.UseAnimationBreak = UseAnimBreak
+			LoadedBreak = Humanoid:LoadAnimation(UseAnimBreak)
+			LoadedBreak.Priority = Enum.AnimationPriority.Action4
+			Globals.UseAnimationBreak = LoadedBreak
+		end
+
+		Globals.ToolAnimationCache[Tool.Name] = { Use = LoadedUse, Break = LoadedBreak }
+	end)
+
+	Connections.HonchoToolRemoved = Character.ChildRemoved:Connect(function(Child)
+		if Child and Child:IsA("Tool") and Functions.UpdateHonchoESP and Toggles.HonchoBoxESPToggle and Toggles.HonchoBoxESPToggle.Value then
+			task.spawn(Functions.UpdateHonchoESP)
 		end
 	end)
 
@@ -4320,7 +4390,7 @@ Functions.HandleCharacter = function(NewCharacter)
 		Globals.IsLookman = Services.Workspace:FindFirstChild("BackdoorLookman") ~= nil
 
 		if Toggles.AmbientToggle.Value then
-			Services.TweenService:Create(Services.Lighting, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), { Ambient = Options.AmbientColor.Value }):Play()
+			Services.Lighting.Ambient = Options.AmbientColor.Value
 		end
 
 		if Main_Game then
@@ -4345,7 +4415,11 @@ Functions.HandleCharacter = function(NewCharacter)
 		end
 
 		if (Toggles.CrouchSpoof.Value or Toggles.PositionSpoof.Value) and RemotesFolder:FindFirstChild("Crouch") then
-			RemotesFolder.Crouch:FireServer(true, true)
+			local now = tick()
+			if now - (Globals.LastCrouchSpoofFire or 0) >= 0.15 then
+				Globals.LastCrouchSpoofFire = now
+				RemotesFolder.Crouch:FireServer(true, true)
+			end
 		end
 
 		if Floor ~= "Fools" and Floor ~= "OldHotel" and not Camera:FindFirstChild("MinecartRig") then
@@ -4357,7 +4431,9 @@ Functions.HandleCharacter = function(NewCharacter)
 		end
 
 		if LocalPlayer:GetAttribute("Alive") == true then
-			Services.SoundService:WaitForChild("Main").Volume = 1
+			local mainSnd = Globals.CachedMainSound or Services.SoundService:FindFirstChild("Main")
+			Globals.CachedMainSound = mainSnd
+			if mainSnd then mainSnd.Volume = 1 end
 		end
 
 		if Floor == "OldHotel" or Floor == "Fools" then
@@ -5003,6 +5079,22 @@ Functions.HandleObject = function(Object)
 				Abysall.ESPLibrary:RemoveESP(Object)
 				Functions.BlacklistESP(Object)
 			end)
+		elseif Name == "GlitchCube" then
+			local handle = Object:FindFirstChild("Handle") or Object:FindFirstChildWhichIsA("BasePart")
+			if handle then
+				handle:GetPropertyChangedSignal("LocalTransparencyModifier"):Connect(function()
+					if handle.LocalTransparencyModifier >= 0.8 then
+						Functions.RemoveESP(Object)
+					end
+				end)
+			end
+			Object.AncestryChanged:Connect(function(_, newParent)
+				if not newParent or not Object:IsDescendantOf(Services.Workspace)
+					or (Character and Object:IsDescendantOf(Character))
+					or (LocalPlayer:FindFirstChild("Backpack") and Object:IsDescendantOf(LocalPlayer.Backpack)) then
+					Functions.RemoveESP(Object)
+				end
+			end)
 		end
 
 		if Toggles.NotifyItemsToggle.Value and Options.NotifyItemList.Value[ItemNames[Name]] and Object.Parent.Name ~= "Drops" then
@@ -5406,8 +5498,9 @@ end
 
 Globals.QueueDone = true
 Connections.QueueConnection = Services.RunService.RenderStepped:Connect(function()
-	local Object = table.remove(Globals.ObjectQueue, 1)
-	if Object then
+	for _ = 1, 4 do
+		local Object = table.remove(Globals.ObjectQueue, 1)
+		if not Object then break end
 		Functions.HandleObject(Object)
 	end
 end)
@@ -5588,9 +5681,18 @@ end
 Functions.TriggerPrompt = function(Prompt)
 	if not Prompt or not Prompt.Parent then return end
 
-	-- Immediate rejection for blacklisted prompts
 	local PName = Prompt.Name
-	if AutoInteractBlacklist[PName] then
+	local ActionText = Prompt.ActionText or ""
+
+	-- Allow InteractPrompt ONLY for locker/wardrobe looting
+	if PName == "InteractPrompt" then
+		if ActionText == "Loot" and Toggles.AutoInteractLockers and Toggles.AutoInteractLockers.Value then
+			-- Allowed through to loot!
+		else
+			PromptCooldowns[Prompt] = tick() + 1.5
+			return
+		end
+	elseif AutoInteractBlacklist[PName] then
 		PromptCooldowns[Prompt] = tick() + 1.0
 		return
 	end
@@ -5832,7 +5934,8 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 			-- Fast pre-filters (O(1) memory checks)
 			local IsSpecialPush = Prompt.Name == "LongPushPrompt" or Prompt.Name == "BigPropPrompt"
 			if not Prompt.Enabled and not IsSpecialPush then continue end
-			if AutoInteractBlacklist[Prompt.Name] then continue end
+			local isLootInteract = Prompt.Name == "InteractPrompt" and Prompt.ActionText == "Loot" and Toggles.AutoInteractLockers and Toggles.AutoInteractLockers.Value
+			if AutoInteractBlacklist[Prompt.Name] and not isLootInteract then continue end
 			if Now < (PromptCooldowns[Prompt] or 0) then continue end
 
 			-- Squared distance check (zero vector allocations)
@@ -6034,12 +6137,33 @@ Connections.Cleaner = Services.RunService.Heartbeat:Connect(function()
 	if tick() - LastClean <= 0.5 then return end
 	LastClean = tick()
 
+	local RootPart = Character and (Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("Collision"))
+	local MyPos = RootPart and RootPart.Position
+	local CurrRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom")) or (LatestRoom and LatestRoom.Value) or 0
+
 	for ArrayName, Array in Objects do
 		if ArrayName == "RoomPrompts" then continue end
 		local I = #Array
 		while I >= 1 do
 			local Object = Array[I]
+			local shouldRemove = false
+
 			if typeof(Object) ~= "Instance" or not Object:IsDescendantOf(Services.Workspace) then
+				shouldRemove = true
+			elseif MyPos and (ArrayName == "Items" or ArrayName == "Currency" or ArrayName == "Chests") then
+				-- Safe distance & past room culling for physical loot objects
+				local ObjRoom = tonumber(Object:GetAttribute("ParentRoom"))
+				if ObjRoom and CurrRoom > 0 and ObjRoom < (CurrRoom - 2) then
+					shouldRemove = true
+				elseif ObjRoom and ObjRoom < CurrRoom then
+					local ObjPos = Object:IsA("BasePart") and Object.Position or (Object:IsA("Model") and (Object.PrimaryPart and Object.PrimaryPart.Position or (Object:FindFirstChildWhichIsA("BasePart") and Object:FindFirstChildWhichIsA("BasePart").Position)))
+					if ObjPos and (ObjPos - MyPos).Magnitude > 350 then
+						shouldRemove = true
+					end
+				end
+			end
+
+			if shouldRemove then
 				table.remove(Array, I)
 				local Conn = ESPConnections[Object]
 				if Conn then
@@ -6047,6 +6171,9 @@ Connections.Cleaner = Services.RunService.Heartbeat:Connect(function()
 					ESPConnections[Object] = nil
 					local Pos = table.find(Connections, Conn)
 					if Pos then table.remove(Connections, Pos) end
+				end
+				if Abysall and Abysall.ESPLibrary then
+					Abysall.ESPLibrary:RemoveESP(Object)
 				end
 			end
 			I -= 1
