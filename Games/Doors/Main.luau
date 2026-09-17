@@ -2595,6 +2595,9 @@ end
 
 -- Continuous Forget-Me-Not multi-factor anomaly evaluator & cycle tracker
 task.spawn(function()
+	Globals.FMN_LoopToken = (Globals.FMN_LoopToken or 0) + 1
+	local MyToken = Globals.FMN_LoopToken
+
 	local ExpectedCounts = {
 		["Tram-Archives"] = 1,
 		["WetFloorSign"] = 1,
@@ -2609,6 +2612,8 @@ task.spawn(function()
 	local WasInFMN = false
 
 	while task.wait(0.15) do
+		if Globals.FMN_LoopToken ~= MyToken then break end
+
 		if not Toggles.ForgetMeNotHelper or not Toggles.ForgetMeNotHelper.Value then
 			if Globals.FMN_HUD then Globals.FMN_HUD.Enabled = false end
 			if WasInFMN then
