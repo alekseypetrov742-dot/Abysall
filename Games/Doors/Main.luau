@@ -2861,6 +2861,10 @@ Functions.CaptureFMN_RoomSnapshot = function(Room)
 		DeletableModels = {},
 		FixedModels = {},
 		SignatureColors = {},
+		Voids = {},
+		Rails = {},
+		Floors = {},
+		Parts = {},
 		FloorColor = nil,
 		FloorMaterial = nil,
 	}
@@ -2903,12 +2907,71 @@ Functions.CaptureFMN_RoomSnapshot = function(Room)
 	scanFolder(Deletable, Snapshot.DeletableCounts, Snapshot.DeletableModels)
 	scanFolder(Fixed, Snapshot.FixedCounts, Snapshot.FixedModels)
 
+	-- 1. Scan EntranceVoid and ExitVoid (черный заезд и черный выезд поезда)
+	for _, vName in ipairs({"EntranceVoid", "ExitVoid"}) do
+		local v = Room:FindFirstChild(vName)
+		if v then
+			Snapshot.Voids[vName] = {}
+			for _, p in ipairs(v:GetChildren()) do
+				if p:IsA("BasePart") then
+					Snapshot.TotalParts = Snapshot.TotalParts + 1
+					table.insert(Snapshot.Voids[vName], {
+						Name = p.Name,
+						Material = p.Material,
+						Color = p.Color,
+						Transparency = p.Transparency,
+						Size = p.Size
+					})
+				end
+			end
+		end
+	end
+
+	-- 2. Scan Parts: Rails, Floors (под рельсами и платформы), и все конструкционные части
 	local Parts = Room:FindFirstChild("Parts")
 	if Parts then
-		local Floor = Parts:FindFirstChild("Floor")
-		if Floor and Floor:IsA("BasePart") then
-			Snapshot.FloorColor = Floor.Color
-			Snapshot.FloorMaterial = Floor.Material
+		local rail = Parts:FindFirstChild("Rail")
+		if rail then
+			for _, p in ipairs(rail:GetChildren()) do
+				if p:IsA("BasePart") then
+					Snapshot.TotalParts = Snapshot.TotalParts + 1
+					table.insert(Snapshot.Rails, {
+						Name = p.Name,
+						Material = p.Material,
+						Color = p.Color,
+						Transparency = p.Transparency,
+						Size = p.Size
+					})
+				end
+			end
+		end
+
+		for _, p in ipairs(Parts:GetChildren()) do
+			if p:IsA("BasePart") then
+				Snapshot.TotalParts = Snapshot.TotalParts + 1
+				table.insert(Snapshot.Parts, {
+					Name = p.Name,
+					Material = p.Material,
+					Color = p.Color,
+					Transparency = p.Transparency,
+					Size = p.Size
+				})
+				if p.Name == "Floor" then
+					table.insert(Snapshot.Floors, {
+						Name = p.Name,
+						Material = p.Material,
+						Color = p.Color,
+						Transparency = p.Transparency,
+						Size = p.Size
+					})
+				end
+			end
+		end
+
+		local MainFloor = Parts:FindFirstChild("Floor")
+		if MainFloor and MainFloor:IsA("BasePart") then
+			Snapshot.FloorColor = MainFloor.Color
+			Snapshot.FloorMaterial = MainFloor.Material
 		end
 	end
 
@@ -3113,6 +3176,121 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 	-- 6. Room attributes
 	if ActiveRoom:GetAttribute("Anomaly") == true then
 		table.insert(Anomalies, "Флаг аномалии комнаты")
+	end
+
+	-- 7. Voids check (черный заезд EntranceVoid и черный выезд ExitVoid)
+	if Snapshot.Voids then
+		for _, vName in ipairs({"EntranceVoid", "ExitVoid"}) do
+			local baseVoidList = Snapshot.Voids[vName]
+			local curVoid = ActiveRoom:FindFirstChild(vName)
+			if baseVoidList and curVoid then
+				local curParts = {}
+				for _, p in ipairs(curVoid:GetChildren()) do
+					if p:IsA("BasePart") then
+						table.insert(curParts, p)
+					end
+				end
+				for i, baseP in ipairs(baseVoidList) do
+					local curP = curParts[i]
+					if curP then
+						local vLabel = vName == "EntranceVoid" and "Черный заезд (EntranceVoid)" or "Черный выезд (ExitVoid)"
+						if curP.Material ~= baseP.Material then
+							table.insert(Anomalies, string.format("%s (%s): изменен материал (%s -> %s)", vLabel, curP.Name, baseP.Material.Name, curP.Material.Name))
+							table.insert(AnomalousObjects, { Object = curP, Label = string.format("⚠️ МАТЕРИАЛ: %s", vLabel) })
+						end
+						local colDiff = math.abs(curP.Color.R - baseP.Color.R) + math.abs(curP.Color.G - baseP.Color.G) + math.abs(curP.Color.B - baseP.Color.B)
+						if colDiff > 0.15 then
+							table.insert(Anomalies, string.format("%s (%s): изменен цвет", vLabel, curP.Name))
+							table.insert(AnomalousObjects, { Object = curP, Label = string.format("⚠️ ЦВЕТ: %s", vLabel) })
+						end
+					end
+				end
+			end
+		end
+	end
+
+	-- 8. Rails check (материал и цвет рельс / шпал)
+	local curPartsFolder = ActiveRoom:FindFirstChild("Parts")
+	if Snapshot.Rails and curPartsFolder then
+		local curRail = curPartsFolder:FindFirstChild("Rail")
+		if curRail then
+			local curRailParts = {}
+			for _, p in ipairs(curRail:GetChildren()) do
+				if p:IsA("BasePart") then
+					table.insert(curRailParts, p)
+				end
+			end
+			for i, baseP in ipairs(Snapshot.Rails) do
+				local curP = curRailParts[i]
+				if curP then
+					local rName = curP.Name == "RailWood" and "шпалы" or "рельс"
+					if curP.Material ~= baseP.Material then
+						table.insert(Anomalies, string.format("Рельсы (%s): изменен материал (%s -> %s)", rName, baseP.Material.Name, curP.Material.Name))
+						table.insert(AnomalousObjects, { Object = curP, Label = string.format("⚠️ РЕЛЬСЫ МАТЕРИАЛ: %s", curP.Material.Name) })
+						break
+					end
+					local colDiff = math.abs(curP.Color.R - baseP.Color.R) + math.abs(curP.Color.G - baseP.Color.G) + math.abs(curP.Color.B - baseP.Color.B)
+					if colDiff > 0.15 then
+						table.insert(Anomalies, string.format("Рельсы (%s): изменен цвет", rName))
+						table.insert(AnomalousObjects, { Object = curP, Label = "⚠️ РЕЛЬСЫ ЦВЕТ" })
+						break
+					end
+				end
+			end
+		end
+	end
+
+	-- 9. Floors check (включая гравий/балласт под рельсами и пол платформы)
+	if Snapshot.Floors and curPartsFolder then
+		local curFloors = {}
+		for _, p in ipairs(curPartsFolder:GetChildren()) do
+			if p.Name == "Floor" and p:IsA("BasePart") then
+				table.insert(curFloors, p)
+			end
+		end
+		for i, baseP in ipairs(Snapshot.Floors) do
+			local curP = curFloors[i]
+			if curP then
+				local fDesc = baseP.Material == Enum.Material.Pebble and "гравий под рельсами" or "пол платформы"
+				if curP.Material ~= baseP.Material then
+					table.insert(Anomalies, string.format("Пол (%s): изменен материал (%s -> %s)", fDesc, baseP.Material.Name, curP.Material.Name))
+					table.insert(AnomalousObjects, { Object = curP, Label = string.format("⚠️ ПОЛ (%s): %s", fDesc, curP.Material.Name) })
+					break
+				end
+				local colDiff = math.abs(curP.Color.R - baseP.Color.R) + math.abs(curP.Color.G - baseP.Color.G) + math.abs(curP.Color.B - baseP.Color.B)
+				if colDiff > 0.15 then
+					table.insert(Anomalies, string.format("Пол (%s): изменен цвет", fDesc))
+					table.insert(AnomalousObjects, { Object = curP, Label = string.format("⚠️ ЦВЕТ ПОЛА (%s)", fDesc) })
+					break
+				end
+			end
+		end
+	end
+
+	-- 10. General structural Parts check (стены, вентиляция, потолок)
+	if Snapshot.Parts and curPartsFolder then
+		local curParts = {}
+		for _, p in ipairs(curPartsFolder:GetChildren()) do
+			if p:IsA("BasePart") then
+				table.insert(curParts, p)
+			end
+		end
+		for i, baseP in ipairs(Snapshot.Parts) do
+			local curP = curParts[i]
+			if curP and curP.Name ~= "Floor" then
+				if curP.Material ~= baseP.Material then
+					table.insert(Anomalies, string.format("Конструкция (%s): изменен материал (%s -> %s)", curP.Name, baseP.Material.Name, curP.Material.Name))
+					table.insert(AnomalousObjects, { Object = curP, Label = string.format("⚠️ МАТЕРИАЛ: %s", curP.Name) })
+					break
+				end
+				local colDiff = math.abs(curP.Color.R - baseP.Color.R) + math.abs(curP.Color.G - baseP.Color.G) + math.abs(curP.Color.B - baseP.Color.B)
+				if colDiff > 0.20 then
+					table.insert(Anomalies, string.format("Конструкция (%s): изменен цвет", curP.Name))
+					table.insert(AnomalousObjects, { Object = curP, Label = string.format("⚠️ ЦВЕТ: %s", curP.Name) })
+					break
+				end
+			end
+		end
 	end
 
 	return Anomalies, AnomalousObjects
