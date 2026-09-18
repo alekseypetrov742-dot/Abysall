@@ -3041,7 +3041,7 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 	local Anomalies = {}
 	local AnomalousObjects = {}
 
-	if not ActiveRoom or not Snapshot then
+	if not ActiveRoom then
 		return Anomalies, AnomalousObjects
 	end
 
@@ -3058,21 +3058,51 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 		curCounts[c.Name] = (curCounts[c.Name] or 0) + 1
 	end
 
-	-- 1. Check counts against memory snapshot
-	for name, expCount in pairs(Snapshot.DeletableCounts) do
+	-- Known standard station architecture & props (NEVER treat as alien/foreign!)
+	local KnownStationObjects = {
+		ArchivesWaitingSeats = true,
+		PottedPlant_Archives_Large = true,
+		WetFloorSign = true,
+		["Tram-Archives"] = true,
+		Pillars = true,
+		ArchivesCeilingLightNoPrefab = true,
+		Floor = true,
+		Rail = true,
+		LargeMetroBoard = true,
+	}
+
+	-- Expected prop counts for the metro station
+	-- Baseline: 2 waiting benches, 2 potted plants, 1 wet floor sign, 1 train
+	local snapCounts = (Snapshot and Snapshot.DeletableCounts) or {}
+	local ExpectedProps = {
+		["ArchivesWaitingSeats"] = (snapCounts["ArchivesWaitingSeats"] and snapCounts["ArchivesWaitingSeats"] >= 1) and snapCounts["ArchivesWaitingSeats"] or 2,
+		["PottedPlant_Archives_Large"] = (snapCounts["PottedPlant_Archives_Large"] and snapCounts["PottedPlant_Archives_Large"] >= 1) and snapCounts["PottedPlant_Archives_Large"] or 2,
+		["WetFloorSign"] = (snapCounts["WetFloorSign"] and snapCounts["WetFloorSign"] >= 1) and snapCounts["WetFloorSign"] or 1,
+		["Tram-Archives"] = (snapCounts["Tram-Archives"] and snapCounts["Tram-Archives"] >= 1) and snapCounts["Tram-Archives"] or 1,
+	}
+
+	-- 1. Check counts of known key station props
+	for name, expCount in pairs(ExpectedProps) do
 		local curr = curCounts[name] or 0
 		if curr < expCount then
 			table.insert(Anomalies, string.format("Пропал: %s (%d/%d)", name, curr, expCount))
 		elseif curr > expCount then
 			table.insert(Anomalies, string.format("Лишний: %s (%d/%d)", name, curr, expCount))
-		end
-	end
-	for name in pairs(curCounts) do
-		if not Snapshot.DeletableCounts[name] then
-			table.insert(Anomalies, string.format("Чужеродный объект: %s", name))
 			for _, c in ipairs(curDelChildren) do
 				if c.Name == name then
 					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЛИШНИЙ: " .. name })
+				end
+			end
+		end
+	end
+
+	-- Check foreign objects (ONLY truly alien objects, never native station objects!)
+	for name in pairs(curCounts) do
+		if not KnownStationObjects[name] and not snapCounts[name] then
+			table.insert(Anomalies, string.format("Чужеродный объект: %s", name))
+			for _, c in ipairs(curDelChildren) do
+				if c.Name == name then
+					table.insert(AnomalousObjects, { Object = c, Label = "⚠️ ЧУЖЕРОДНЫЙ: " .. name })
 				end
 			end
 		end
@@ -3103,7 +3133,7 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 
 	-- 3. Check ANY color or material change across all parts of all models!
 	for _, c in ipairs(curDelChildren) do
-		local snapModelList = Snapshot.DeletableModels[c.Name]
+		local snapModelList = Snapshot and Snapshot.DeletableModels and Snapshot.DeletableModels[c.Name]
 		local snapModel = snapModelList and snapModelList[1]
 
 		for _, desc in ipairs(c:GetDescendants()) do
@@ -3121,7 +3151,7 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 						table.insert(AnomalousObjects, { Object = c, Label = string.format("⚠️ МАТЕРИАЛ: %s", desc.Material.Name) })
 						break
 					end
-			end
+				end
 			elseif desc:IsA("PointLight") then
 				if desc.Color.R > 0.85 and desc.Color.G < 0.2 and desc.Color.B < 0.2 then
 					table.insert(Anomalies, "Красный свет в лампе")
@@ -3192,7 +3222,6 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 		["PottedPlant_Archives_Large"] = 0.47,
 		["Tram-Archives"] = 3.98,
 		["Pillars"] = 6.70,
-		["ArchivesCeilingLightNoPrefab"] = 17.85,
 	}
 	local BaseY = nil
 	for _, c in ipairs(curDelChildren) do
@@ -3207,7 +3236,7 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 				if math.abs(c:GetPivot().UpVector.Y - 1) <= 0.05 then
 					local relY = c:GetPivot().Position.Y - BaseY
 					local diff = math.abs(relY - ExpectedRelY[c.Name])
-					if diff > 2.0 then
+					if diff > 2.5 then
 						table.insert(Anomalies, string.format("Смещён по высоте: %s (ΔY = %.1f)", c.Name, diff))
 						table.insert(AnomalousObjects, { Object = c, Label = string.format("⚠️ СМЕЩЁН: %s", c.Name) })
 					end
@@ -3222,7 +3251,7 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 	end
 
 	-- 7. Voids check (черный заезд EntranceVoid и черный выезд ExitVoid)
-	if Snapshot.Voids then
+	if Snapshot and Snapshot.Voids then
 		for _, vName in ipairs({"EntranceVoid", "ExitVoid"}) do
 			local baseVoidList = Snapshot.Voids[vName]
 			local curVoid = ActiveRoom:FindFirstChild(vName)
@@ -3254,7 +3283,7 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 
 	-- 8. Rails check (материал и цвет рельс / шпал)
 	local curPartsFolder = ActiveRoom:FindFirstChild("Parts")
-	if Snapshot.Rails and curPartsFolder then
+	if Snapshot and Snapshot.Rails and curPartsFolder then
 		local curRail = curPartsFolder:FindFirstChild("Rail")
 		if curRail then
 			local curRailParts = {}
@@ -3284,7 +3313,7 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 	end
 
 	-- 9. Floors check (включая гравий/балласт под рельсами и пол платформы)
-	if Snapshot.Floors and curPartsFolder then
+	if Snapshot and Snapshot.Floors and curPartsFolder then
 		local curFloors = {}
 		for _, p in ipairs(curPartsFolder:GetChildren()) do
 			if p.Name == "Floor" and p:IsA("BasePart") then
@@ -3311,7 +3340,7 @@ Functions.CompareFMN_Snapshot = function(ActiveRoom, Snapshot)
 	end
 
 	-- 10. General structural Parts check (стены, вентиляция, потолок)
-	if Snapshot.Parts and curPartsFolder then
+	if Snapshot and Snapshot.Parts and curPartsFolder then
 		local curParts = {}
 		for _, p in ipairs(curPartsFolder:GetChildren()) do
 			if p:IsA("BasePart") then
@@ -3526,25 +3555,33 @@ task.spawn(function()
 		end
 
 		-- 5. MEMORY SNAPSHOT & CYCLE EVALUATION
-		if not Globals.FMN_RoomSnapshot or Globals.FMN_RoomSnapshot.RoomName ~= BaseRoom.Name then
-			Globals.FMN_RoomSnapshot = Functions.CaptureFMN_RoomSnapshot(BaseRoom)
-		end
-
 		-- If player is currently in the base room (cycle 0, before entering flower door)
 		if ActiveRoom == BaseRoom then
+			-- Continuously refine snapshot while in BaseRoom to ensure all objects replicate
+			local freshSnap = Functions.CaptureFMN_RoomSnapshot(BaseRoom)
+			if freshSnap and (not Globals.FMN_RoomSnapshot or freshSnap.TotalObjects >= (Globals.FMN_RoomSnapshot.TotalObjects or 0)) then
+				Globals.FMN_RoomSnapshot = freshSnap
+			end
+
 			local snap = Globals.FMN_RoomSnapshot
-			local detail = snap and string.format("Сохранено объектов: %d (деталей: %d). Запомните комнату и войдите в дверь.", snap.TotalObjects, snap.TotalParts) or "Эталонная комната сохранена в память."
+			local count = snap and snap.TotalObjects or 0
+			local detail = (count > 0) and string.format("Сохранено объектов: %d (деталей: %d). Запомните комнату и войдите в дверь.", snap.TotalObjects, snap.TotalParts) or "Эталонная комната сохранена в память."
 			Functions.UpdateFMN_HUD("SnapshotSaved", detail, ForwardDoor, BackwardDoor)
 			continue
 		end
 
 		-- If player is in minigame puzzle room (inside LocalPlayer.Name folder)
+		-- If no snapshot was saved from BaseRoom, attempt to snapshot BaseRoom or fall back to default
+		if not Globals.FMN_RoomSnapshot and BaseRoom then
+			Globals.FMN_RoomSnapshot = Functions.CaptureFMN_RoomSnapshot(BaseRoom)
+		end
+
 		local Assets = ActiveRoom:FindFirstChild("Assets")
 		local Deletable = Assets and Assets:FindFirstChild("Deletable")
 		local DelChildren = Deletable and Deletable:GetChildren() or {}
 
-		if #DelChildren < 8 then
-			Functions.UpdateFMN_HUD("Scanning", string.format("Загрузка объектов (%d/14)...", #DelChildren), ForwardDoor, BackwardDoor)
+		if #DelChildren < 6 then
+			Functions.UpdateFMN_HUD("Scanning", string.format("Загрузка объектов (%d)...", #DelChildren), ForwardDoor, BackwardDoor)
 			continue
 		end
 
@@ -3554,7 +3591,7 @@ task.spawn(function()
 			Functions.UpdateFMN_HUD("Anomaly", table.concat(Anomalies, " • "), ForwardDoor, BackwardDoor, AnomalousObjects)
 		else
 			local snap = Globals.FMN_RoomSnapshot
-			local countStr = snap and string.format("Все %d объектов (%d деталей) совпадают со слепком", snap.TotalObjects, snap.TotalParts) or "Все объекты совпадают со слепком комнаты"
+			local countStr = snap and string.format("Все объекты в норме (%d деталей)", snap.TotalParts) or "Все объекты в норме"
 			Functions.UpdateFMN_HUD("Clean", countStr .. " (аномалий нет)", ForwardDoor, BackwardDoor)
 		end
 	end
@@ -5684,15 +5721,25 @@ Functions.TriggerPrompt = function(Prompt)
 	local PName = Prompt.Name
 	local ActionText = Prompt.ActionText or ""
 
-	-- Allow InteractPrompt ONLY for locker/wardrobe looting
-	if PName == "InteractPrompt" then
-		if ActionText == "Loot" and Toggles.AutoInteractLockers and Toggles.AutoInteractLockers.Value then
-			-- Allowed through to loot!
-		else
-			PromptCooldowns[Prompt] = tick() + 1.5
-			return
+	-- Allow locker/wardrobe looting for any container prompt
+	local isLockerLootPrompt = false
+	if Toggles.AutoInteractLockers and Toggles.AutoInteractLockers.Value then
+		local oText = Prompt.ObjectText or ""
+		local p = Prompt.Parent
+		local pName = p and p.Name or ""
+		local gpName = p and p.Parent and p.Parent.Name or ""
+		if (ActionText == "Loot" or ActionText == "Open" or ActionText == "Search") and ActionText ~= "Hide" and PName ~= "HidePrompt" then
+			if oText == "Wardrobe" or oText == "Locker" or oText == "Cabinet" or oText == "Dresser" or oText == "Desk"
+				or pName:find("Locker") or pName:find("Wardrobe") or pName:find("Cabinet") or pName:find("Dresser") or pName:find("Desk")
+				or gpName:find("Locker") or gpName:find("Wardrobe") or gpName:find("Cabinet") or gpName:find("Dresser") then
+				isLockerLootPrompt = true
+			elseif ActionText == "Loot" then
+				isLockerLootPrompt = true
+			end
 		end
-	elseif AutoInteractBlacklist[PName] then
+	end
+
+	if AutoInteractBlacklist[PName] and not isLockerLootPrompt then
 		PromptCooldowns[Prompt] = tick() + 1.0
 		return
 	end
@@ -5934,7 +5981,23 @@ Connections.AutoInteract = Services.RunService.Heartbeat:Connect(function()
 			-- Fast pre-filters (O(1) memory checks)
 			local IsSpecialPush = Prompt.Name == "LongPushPrompt" or Prompt.Name == "BigPropPrompt"
 			if not Prompt.Enabled and not IsSpecialPush then continue end
-			local isLootInteract = Prompt.Name == "InteractPrompt" and Prompt.ActionText == "Loot" and Toggles.AutoInteractLockers and Toggles.AutoInteractLockers.Value
+			local isLootInteract = false
+			if Toggles.AutoInteractLockers and Toggles.AutoInteractLockers.Value then
+				local aText = Prompt.ActionText or ""
+				local oText = Prompt.ObjectText or ""
+				local p = Prompt.Parent
+				local pName = p and p.Name or ""
+				local gpName = p and p.Parent and p.Parent.Name or ""
+				if (aText == "Loot" or aText == "Open" or aText == "Search") and aText ~= "Hide" and Prompt.Name ~= "HidePrompt" then
+					if oText == "Wardrobe" or oText == "Locker" or oText == "Cabinet" or oText == "Dresser" or oText == "Desk"
+						or pName:find("Locker") or pName:find("Wardrobe") or pName:find("Cabinet") or pName:find("Dresser") or pName:find("Desk")
+						or gpName:find("Locker") or gpName:find("Wardrobe") or gpName:find("Cabinet") or gpName:find("Dresser") then
+						isLootInteract = true
+					elseif aText == "Loot" then
+						isLootInteract = true
+					end
+				end
+			end
 			if AutoInteractBlacklist[Prompt.Name] and not isLootInteract then continue end
 			if Now < (PromptCooldowns[Prompt] or 0) then continue end
 
@@ -6141,8 +6204,9 @@ Connections.Cleaner = Services.RunService.Heartbeat:Connect(function()
 	local MyPos = RootPart and RootPart.Position
 	local CurrRoom = tonumber(LocalPlayer:GetAttribute("CurrentRoom")) or (LatestRoom and LatestRoom.Value) or 0
 
+	-- 1. Cull physical objects (Items, Currency, Chests, GoldPiles) > 2 rooms behind or > 350 studs away
 	for ArrayName, Array in Objects do
-		if ArrayName == "RoomPrompts" then continue end
+		if ArrayName == "RoomPrompts" or ArrayName == "Prompts" then continue end
 		local I = #Array
 		while I >= 1 do
 			local Object = Array[I]
@@ -6150,8 +6214,7 @@ Connections.Cleaner = Services.RunService.Heartbeat:Connect(function()
 
 			if typeof(Object) ~= "Instance" or not Object:IsDescendantOf(Services.Workspace) then
 				shouldRemove = true
-			elseif MyPos and (ArrayName == "Items" or ArrayName == "Currency" or ArrayName == "Chests") then
-				-- Safe distance & past room culling for physical loot objects
+			elseif MyPos and (ArrayName == "Items" or ArrayName == "Currency" or ArrayName == "Chests" or ArrayName == "GoldPiles") then
 				local ObjRoom = tonumber(Object:GetAttribute("ParentRoom"))
 				if ObjRoom and CurrRoom > 0 and ObjRoom < (CurrRoom - 2) then
 					shouldRemove = true
@@ -6177,6 +6240,43 @@ Connections.Cleaner = Services.RunService.Heartbeat:Connect(function()
 				end
 			end
 			I -= 1
+		end
+	end
+
+	-- 2. Cull stale prompts from past rooms in Objects.Prompts (removes lag from AutoInteract)
+	if Objects.Prompts and CurrRoom > 0 then
+		local I = #Objects.Prompts
+		while I >= 1 do
+			local P = Objects.Prompts[I]
+			local shouldRemove = false
+			if typeof(P) ~= "Instance" or not P:IsDescendantOf(Services.Workspace) then
+				shouldRemove = true
+			elseif MyPos then
+				local PRoom = tonumber(P:GetAttribute("ParentRoom"))
+				if PRoom and PRoom < (CurrRoom - 2) then
+					shouldRemove = true
+				elseif PRoom and PRoom < CurrRoom then
+					local PParent = P.Parent
+					local PPos = PParent and (PParent:IsA("BasePart") and PParent.Position or (PParent:IsA("Model") and (PParent.PrimaryPart and PParent.PrimaryPart.Position or (PParent:FindFirstChildWhichIsA("BasePart") and PParent:FindFirstChildWhichIsA("BasePart").Position))))
+					if PPos and (PPos - MyPos).Magnitude > 350 then
+						shouldRemove = true
+					end
+				end
+			end
+			if shouldRemove then
+				table.remove(Objects.Prompts, I)
+			end
+			I -= 1
+		end
+	end
+
+	-- 3. Clean past room buckets in Objects.RoomPrompts (> 2 rooms behind)
+	if Objects.RoomPrompts and CurrRoom > 0 then
+		for rNum in pairs(Objects.RoomPrompts) do
+			local n = tonumber(rNum)
+			if n and n > 0 and n < (CurrRoom - 2) then
+				Objects.RoomPrompts[rNum] = nil
+			end
 		end
 	end
 end)
